@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useRef } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -32,7 +32,34 @@ import {
   Clipboard,
 } from 'lucide-react';
 
-const nodeTypes = { talendComponent: TalendComponentNode };
+function SubjobGroupNode({ data }) {
+  return (
+    <div
+      style={{
+        width: data.width,
+        height: data.height,
+        borderRadius: 8,
+        border: '2px dashed rgba(74, 144, 217, 0.4)',
+        backgroundColor: 'rgba(74, 144, 217, 0.06)',
+        pointerEvents: 'none',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          color: 'var(--text-secondary, #94a3b8)',
+          fontWeight: 600,
+          padding: '2px 8px',
+          opacity: 0.7,
+        }}
+      >
+        {data.label}
+      </div>
+    </div>
+  );
+}
+
+const nodeTypes = { talendComponent: TalendComponentNode, subjobGroup: SubjobGroupNode };
 
 const defaultEdgeOptions = {
   type: 'smoothstep',
@@ -59,7 +86,8 @@ export default function DesignerCanvas() {
     theme,
     clipboard,
     copyNodeToClipboard,
-    pasteNodeFromClipboard,
+    copySubjobToClipboard,
+    pasteFromClipboard,
     activeJobId,
     saveJob,
     runJob,
@@ -81,6 +109,89 @@ export default function DesignerCanvas() {
   const isRunning = runningJobId === activeJobId;
   const isPaused = jobMetadata.status === 'paused';
   const status = jobMetadata.status || 'draft';
+
+  // ── Compute subjobs (connected components from row/iterate edges) ──
+  const subjobGroups = useMemo(() => {
+    if (edges.length === 0 || nodes.length < 2) return [];
+
+    const parent = {};
+    const find = (x) => {
+      if (parent[x] === undefined) parent[x] = x;
+      if (parent[x] !== x) parent[x] = find(parent[x]);
+      return parent[x];
+    };
+    const union = (a, b) => { parent[find(a)] = find(b); };
+
+    for (const edge of edges) {
+      if (edge.data?.category !== 'trigger') {
+        union(edge.source, edge.target);
+      }
+    }
+
+    const groups = {};
+    for (const node of nodes) {
+      const root = find(node.id);
+      if (!groups[root]) groups[root] = [];
+      groups[root].push(node);
+    }
+
+    const NODE_W = 200;
+    const NODE_H = 70;
+    const PAD = 25;
+    const HDR = 22;
+
+    return Object.entries(groups)
+      .filter(([, g]) => g.length >= 2)
+      .map(([root, g], idx) => {
+        const minX = Math.min(...g.map((n) => n.position.x));
+        const minY = Math.min(...g.map((n) => n.position.y));
+        const maxX = Math.max(...g.map((n) => n.position.x + (n.width || NODE_W)));
+        const maxY = Math.max(...g.map((n) => n.position.y + (n.height || NODE_H)));
+        return {
+          id: `subjob_${root}`,
+          type: 'subjobGroup',
+          position: { x: minX - PAD, y: minY - PAD - HDR },
+          data: {
+            width: maxX - minX + PAD * 2,
+            height: maxY - minY + PAD * 2 + HDR,
+            label: `Subjob ${idx + 1}`,
+            nodeIds: g.map((n) => n.id),
+          },
+          selectable: false,
+          draggable: false,
+          focusable: false,
+          zIndex: -1,
+        };
+      });
+  }, [nodes, edges]);
+
+  // Merge subjob group nodes (rendered behind) with real nodes
+  const allNodes = useMemo(() => [...subjobGroups, ...nodes], [subjobGroups, nodes]);
+
+  // Filter out subjob group changes from onNodesChange
+  const handleNodesChange = useCallback(
+    (changes) => {
+      const real = changes.filter((c) => !c.id?.startsWith('subjob_'));
+      if (real.length > 0) onNodesChange(real);
+    },
+    [onNodesChange]
+  );
+
+  // ── Keyboard shortcuts (Ctrl+C / Ctrl+V) ────────────
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.ctrlKey && e.key === 'c' && selectedNodeId) {
+        e.preventDefault();
+        copyNodeToClipboard(selectedNodeId);
+      }
+      if (e.ctrlKey && e.key === 'v' && clipboard) {
+        e.preventDefault();
+        pasteFromClipboard(activeJobId);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodeId, clipboard, activeJobId, copyNodeToClipboard, pasteFromClipboard]);
 
   const toggleBottom = (tab) => {
     if (bottomOpen && bottomTab === tab) {
@@ -190,11 +301,22 @@ export default function DesignerCanvas() {
       icon: <Copy size={12} />,
       onClick: () => copyNodeToClipboard(node.id),
     });
+
+    // Check if node belongs to a subjob — offer Copy Subjob
+    const nodeSubjob = subjobGroups.find((sg) => sg.data.nodeIds.includes(node.id));
+    if (nodeSubjob) {
+      items.push({
+        label: 'Copy Subjob',
+        icon: <Copy size={12} />,
+        onClick: () => copySubjobToClipboard(nodeSubjob.data.nodeIds),
+      });
+    }
+
     if (clipboard) {
       items.push({
-        label: 'Paste Component',
+        label: clipboard.type === 'subjob' ? 'Paste Subjob' : 'Paste Component',
         icon: <Clipboard size={12} />,
-        onClick: () => pasteNodeFromClipboard(activeJobId),
+        onClick: () => pasteFromClipboard(activeJobId),
       });
     }
     items.push({ separator: true });
@@ -209,7 +331,7 @@ export default function DesignerCanvas() {
     });
 
     return items;
-  }, [nodeContextMenu, startConnecting, copyNodeToClipboard, clipboard, pasteNodeFromClipboard, activeJobId, deleteSelectedNode, onNodeClick]);
+  }, [nodeContextMenu, startConnecting, copyNodeToClipboard, copySubjobToClipboard, subjobGroups, clipboard, pasteFromClipboard, activeJobId, deleteSelectedNode, onNodeClick]);
 
   return (
     <div className={`designer-canvas-wrapper ${connectingFrom ? 'designer-canvas-wrapper--connecting' : ''}`}>
@@ -226,9 +348,9 @@ export default function DesignerCanvas() {
       <JobTabs />
       <div className="designer-canvas" ref={reactFlowWrapper} style={{ flex: 1 }}>
         <ReactFlow
-          nodes={nodes}
+          nodes={allNodes}
           edges={edges}
-          onNodesChange={onNodesChange}
+          onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeClick={handleNodeClick}
@@ -260,10 +382,10 @@ export default function DesignerCanvas() {
             {clipboard && (
               <button
                 className="toolbar-btn"
-                onClick={() => pasteNodeFromClipboard(activeJobId)}
-                title="Paste copied component"
+                onClick={() => pasteFromClipboard(activeJobId)}
+                title={clipboard.type === 'subjob' ? 'Paste copied subjob' : 'Paste copied component'}
               >
-                Paste: {clipboard.node.data.label}
+                Paste: {clipboard.type === 'subjob' ? `Subjob (${clipboard.nodes.length})` : clipboard.node.data.label}
               </button>
             )}
             {selectedNode && (

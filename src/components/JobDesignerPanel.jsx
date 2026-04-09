@@ -32,7 +32,7 @@ export default function JobDesignerPanel() {
     deleteSelectedNode,
     clipboard,
     copyNodeToClipboard,
-    pasteNodeFromClipboard,
+    pasteFromClipboard,
   } = useDesigner();
 
   const [expandedSections, setExpandedSections] = useState({
@@ -162,7 +162,7 @@ export default function JobDesignerPanel() {
             icon: <Clipboard size={12} />,
             onClick: () => {
               copyNodeToClipboard(contextMenu.nodeId);
-              setTimeout(() => pasteNodeFromClipboard(job.id), 0);
+              setTimeout(() => pasteFromClipboard(job.id), 0);
             },
           });
         }
@@ -181,7 +181,7 @@ export default function JobDesignerPanel() {
     }
 
     return [];
-  }, [contextMenu, jobs, activeJobId, handleNewJob, startRename, duplicateJob, closeJob, setActiveJobId, copyNodeToClipboard, pasteNodeFromClipboard, setSelectedNodeId, deleteSelectedNode]);
+  }, [contextMenu, jobs, activeJobId, handleNewJob, startRename, duplicateJob, closeJob, setActiveJobId, copyNodeToClipboard, pasteFromClipboard, setSelectedNodeId, deleteSelectedNode]);
 
   return (
     <div className="job-designer-panel">
@@ -241,11 +241,11 @@ export default function JobDesignerPanel() {
         <div className="jdp-paste-bar">
           <button
             className="jdp-paste-btn"
-            onClick={() => pasteNodeFromClipboard(activeJobId)}
-            title="Paste component into current job"
+            onClick={() => pasteFromClipboard(activeJobId)}
+            title="Paste into current job"
           >
             <Clipboard size={12} />
-            Paste: {clipboard.node.data.label}
+            Paste: {clipboard.type === 'subjob' ? `Subjob (${clipboard.nodes.length})` : clipboard.node.data.label}
           </button>
         </div>
       )}

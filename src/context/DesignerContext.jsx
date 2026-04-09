@@ -1,5 +1,5 @@
 import { createContext, useContext, useCallback, useState, useRef, useEffect } from 'react';
-import { addEdge } from 'reactflow';
+import { addEdge, applyNodeChanges, applyEdgeChanges } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 import registry from '../data/ui_registry.json';
 
@@ -315,43 +315,17 @@ export function DesignerProvider({ children }) {
   }, [updateActiveJob]);
 
   const onNodesChange = useCallback((changes) => {
-    updateActiveJob((j) => {
-      let updated = [...j.nodes];
-      for (const change of changes) {
-        if (change.type === 'position' && change.position) {
-          updated = updated.map((n) =>
-            n.id === change.id ? { ...n, position: change.position, dragging: change.dragging } : n
-          );
-        } else if (change.type === 'select') {
-          updated = updated.map((n) =>
-            n.id === change.id ? { ...n, selected: change.selected } : n
-          );
-        } else if (change.type === 'remove') {
-          updated = updated.filter((n) => n.id !== change.id);
-        } else if (change.type === 'dimensions' && change.dimensions) {
-          updated = updated.map((n) =>
-            n.id === change.id ? { ...n, width: change.dimensions.width, height: change.dimensions.height } : n
-          );
-        }
-      }
-      return { ...j, nodes: updated };
-    });
+    updateActiveJob((j) => ({
+      ...j,
+      nodes: applyNodeChanges(changes, j.nodes),
+    }));
   }, [updateActiveJob]);
 
   const onEdgesChange = useCallback((changes) => {
-    updateActiveJob((j) => {
-      let updated = [...j.edges];
-      for (const change of changes) {
-        if (change.type === 'select') {
-          updated = updated.map((e) =>
-            e.id === change.id ? { ...e, selected: change.selected } : e
-          );
-        } else if (change.type === 'remove') {
-          updated = updated.filter((e) => e.id !== change.id);
-        }
-      }
-      return { ...j, edges: updated };
-    });
+    updateActiveJob((j) => ({
+      ...j,
+      edges: applyEdgeChanges(changes, j.edges),
+    }));
   }, [updateActiveJob]);
 
   const addComponentToCanvas = useCallback(
@@ -364,6 +338,7 @@ export function DesignerProvider({ children }) {
         id,
         type: 'talendComponent',
         position,
+        selected: true,
         data: {
           componentType,
           label: def.label,
@@ -375,7 +350,7 @@ export function DesignerProvider({ children }) {
 
       updateActiveJob((j) => ({
         ...j,
-        nodes: [...j.nodes, newNode],
+        nodes: [...j.nodes.map((n) => ({ ...n, selected: false })), newNode],
         nodeProperties: { ...j.nodeProperties, [id]: buildDefaults(componentType) },
         selectedNodeId: id,
       }));
@@ -519,31 +494,89 @@ export function DesignerProvider({ children }) {
     const node = job.nodes.find((n) => n.id === nodeId);
     const props = job.nodeProperties[nodeId];
     if (!node) return;
-    setClipboard({ node: JSON.parse(JSON.stringify(node)), props: JSON.parse(JSON.stringify(props || {})) });
+    setClipboard({ type: 'node', node: JSON.parse(JSON.stringify(node)), props: JSON.parse(JSON.stringify(props || {})) });
   }, [jobs, activeJobId]);
 
-  const pasteNodeFromClipboard = useCallback((targetJobId) => {
+  const copySubjobToClipboard = useCallback((nodeIds) => {
+    const job = jobs.find((j) => j.id === activeJobId);
+    if (!job) return;
+    const subjobNodes = job.nodes.filter((n) => nodeIds.includes(n.id));
+    const subjobEdges = job.edges.filter((e) => nodeIds.includes(e.source) && nodeIds.includes(e.target));
+    const subjobProps = {};
+    for (const id of nodeIds) {
+      if (job.nodeProperties[id]) {
+        subjobProps[id] = JSON.parse(JSON.stringify(job.nodeProperties[id]));
+      }
+    }
+    setClipboard({
+      type: 'subjob',
+      nodes: JSON.parse(JSON.stringify(subjobNodes)),
+      edges: JSON.parse(JSON.stringify(subjobEdges)),
+      nodeProperties: subjobProps,
+    });
+  }, [jobs, activeJobId]);
+
+  const pasteFromClipboard = useCallback((targetJobId) => {
     if (!clipboard) return;
-    const { node, props } = clipboard;
-    const newId = `${node.data.componentType}_${uuidv4().slice(0, 8)}`;
-    const newNode = {
-      ...node,
-      id: newId,
-      position: { x: node.position.x + 40, y: node.position.y + 40 },
-      selected: false,
-    };
-    setJobs((prev) =>
-      prev.map((j) =>
-        j.id === targetJobId
-          ? {
-              ...j,
-              nodes: [...j.nodes, newNode],
-              nodeProperties: { ...j.nodeProperties, [newId]: { ...props } },
-              selectedNodeId: newId,
-            }
-          : j
-      )
-    );
+
+    if (clipboard.type === 'subjob') {
+      const idMap = {};
+      const newNodes = clipboard.nodes.map((node) => {
+        const newId = `${node.data.componentType}_${uuidv4().slice(0, 8)}`;
+        idMap[node.id] = newId;
+        return {
+          ...node,
+          id: newId,
+          position: { x: node.position.x + 60, y: node.position.y + 60 },
+          selected: false,
+        };
+      });
+      const newEdges = clipboard.edges.map((edge) => ({
+        ...edge,
+        id: `e_${uuidv4().slice(0, 8)}`,
+        source: idMap[edge.source],
+        target: idMap[edge.target],
+      }));
+      const newProps = {};
+      for (const [oldId, props] of Object.entries(clipboard.nodeProperties)) {
+        if (idMap[oldId]) {
+          newProps[idMap[oldId]] = { ...props };
+        }
+      }
+      setJobs((prev) =>
+        prev.map((j) =>
+          j.id === targetJobId
+            ? {
+                ...j,
+                nodes: [...j.nodes, ...newNodes],
+                edges: [...j.edges, ...newEdges],
+                nodeProperties: { ...j.nodeProperties, ...newProps },
+              }
+            : j
+        )
+      );
+    } else {
+      const { node, props } = clipboard;
+      const newId = `${node.data.componentType}_${uuidv4().slice(0, 8)}`;
+      const newNode = {
+        ...node,
+        id: newId,
+        position: { x: node.position.x + 40, y: node.position.y + 40 },
+        selected: false,
+      };
+      setJobs((prev) =>
+        prev.map((j) =>
+          j.id === targetJobId
+            ? {
+                ...j,
+                nodes: [...j.nodes, newNode],
+                nodeProperties: { ...j.nodeProperties, [newId]: { ...props } },
+                selectedNodeId: newId,
+              }
+            : j
+        )
+      );
+    }
   }, [clipboard]);
 
   const value = {
@@ -590,7 +623,8 @@ export function DesignerProvider({ children }) {
     // Cross-job copy
     clipboard,
     copyNodeToClipboard,
-    pasteNodeFromClipboard,
+    copySubjobToClipboard,
+    pasteFromClipboard,
     // Connector linking (Talend-style)
     addEdgeManual,
     // Metadata repository (Talend-style)
