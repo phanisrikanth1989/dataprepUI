@@ -1,8 +1,9 @@
-import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect, memo } from 'react';
 import ReactFlow, {
   Background,
   Controls,
   Panel,
+  useViewport,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useDesigner } from '../context/DesignerContext';
@@ -30,12 +31,16 @@ import {
   Copy,
   Trash2,
   Clipboard,
+  Download,
 } from 'lucide-react';
 
-function SubjobGroupNode({ data }) {
+const SubjobGroupNode = memo(function SubjobGroupNode({ data }) {
   return (
     <div
       style={{
+        position: 'absolute',
+        left: data.x,
+        top: data.y,
         width: data.width,
         height: data.height,
         borderRadius: 8,
@@ -57,9 +62,23 @@ function SubjobGroupNode({ data }) {
       </div>
     </div>
   );
+});
+
+function SubjobOverlay({ groups }) {
+  const { x, y, zoom } = useViewport();
+  if (groups.length === 0) return null;
+  return (
+    <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}>
+      <div style={{ transform: `translate(${x}px, ${y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
+        {groups.map((g) => (
+          <SubjobGroupNode key={g.id} data={g} />
+        ))}
+      </div>
+    </div>
+  );
 }
 
-const nodeTypes = { talendComponent: TalendComponentNode, subjobGroup: SubjobGroupNode };
+const nodeTypes = { talendComponent: TalendComponentNode };
 
 const defaultEdgeOptions = {
   type: 'smoothstep',
@@ -90,12 +109,15 @@ export default function DesignerCanvas() {
     pasteFromClipboard,
     activeJobId,
     saveJob,
+    exportJobAsJson,
     runJob,
     pauseJob,
     stopJob,
     runningJobId,
     jobMetadata,
     addEdgeManual,
+    undo,
+    redo,
   } = useDesigner();
 
   const [bottomTab, setBottomTab] = useState('run');
@@ -149,37 +171,23 @@ export default function DesignerCanvas() {
         const maxY = Math.max(...g.map((n) => n.position.y + (n.height || NODE_H)));
         return {
           id: `subjob_${root}`,
-          type: 'subjobGroup',
-          position: { x: minX - PAD, y: minY - PAD - HDR },
-          data: {
-            width: maxX - minX + PAD * 2,
-            height: maxY - minY + PAD * 2 + HDR,
-            label: `Subjob ${idx + 1}`,
-            nodeIds: g.map((n) => n.id),
-          },
-          selectable: false,
-          draggable: false,
-          focusable: false,
-          zIndex: -1,
+          x: minX - PAD,
+          y: minY - PAD - HDR,
+          width: maxX - minX + PAD * 2,
+          height: maxY - minY + PAD * 2 + HDR,
+          label: `Subjob ${idx + 1}`,
+          nodeIds: g.map((n) => n.id),
         };
       });
   }, [nodes, edges]);
 
-  // Merge subjob group nodes (rendered behind) with real nodes
-  const allNodes = useMemo(() => [...subjobGroups, ...nodes], [subjobGroups, nodes]);
-
-  // Filter out subjob group changes from onNodesChange
-  const handleNodesChange = useCallback(
-    (changes) => {
-      const real = changes.filter((c) => !c.id?.startsWith('subjob_'));
-      if (real.length > 0) onNodesChange(real);
-    },
-    [onNodesChange]
-  );
-
-  // ── Keyboard shortcuts (Ctrl+C / Ctrl+V) ────────────
+  // ── Keyboard shortcuts (Ctrl+C / Ctrl+V / Ctrl+Z / Ctrl+Y) ────────────
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Skip if user is typing in an input/textarea
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
       if (e.ctrlKey && e.key === 'c' && selectedNodeId) {
         e.preventDefault();
         copyNodeToClipboard(selectedNodeId);
@@ -188,10 +196,18 @@ export default function DesignerCanvas() {
         e.preventDefault();
         pasteFromClipboard(activeJobId);
       }
+      if (e.ctrlKey && e.key === 'z') {
+        e.preventDefault();
+        undo();
+      }
+      if (e.ctrlKey && e.key === 'y') {
+        e.preventDefault();
+        redo();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, clipboard, activeJobId, copyNodeToClipboard, pasteFromClipboard]);
+  }, [selectedNodeId, clipboard, activeJobId, copyNodeToClipboard, pasteFromClipboard, undo, redo]);
 
   const toggleBottom = (tab) => {
     if (bottomOpen && bottomTab === tab) {
@@ -303,12 +319,12 @@ export default function DesignerCanvas() {
     });
 
     // Check if node belongs to a subjob — offer Copy Subjob
-    const nodeSubjob = subjobGroups.find((sg) => sg.data.nodeIds.includes(node.id));
+    const nodeSubjob = subjobGroups.find((sg) => sg.nodeIds.includes(node.id));
     if (nodeSubjob) {
       items.push({
         label: 'Copy Subjob',
         icon: <Copy size={12} />,
-        onClick: () => copySubjobToClipboard(nodeSubjob.data.nodeIds),
+        onClick: () => copySubjobToClipboard(nodeSubjob.nodeIds),
       });
     }
 
@@ -348,9 +364,9 @@ export default function DesignerCanvas() {
       <JobTabs />
       <div className="designer-canvas" ref={reactFlowWrapper} style={{ flex: 1 }}>
         <ReactFlow
-          nodes={allNodes}
+          nodes={nodes}
           edges={edges}
-          onNodesChange={handleNodesChange}
+          onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeClick={handleNodeClick}
@@ -369,6 +385,7 @@ export default function DesignerCanvas() {
           multiSelectionKeyCode="Control"
         >
           <Background variant="dots" gap={15} size={1} color={theme === 'dark' ? '#334155' : '#cbd5e1'} />
+          <SubjobOverlay groups={subjobGroups} />
           <Controls
             position="bottom-right"
             style={{ background: '#1e293b', border: '1px solid #334155' }}
@@ -404,6 +421,10 @@ export default function DesignerCanvas() {
             <button className="toolbar-btn toolbar-btn--primary" onClick={saveJob} title="Save Job (Ctrl+S)">
               <Save size={14} />
               Save
+            </button>
+            <button className="toolbar-btn" onClick={exportJobAsJson} title="Export Job as JSON">
+              <Download size={14} />
+              Export JSON
             </button>
           </Panel>
 

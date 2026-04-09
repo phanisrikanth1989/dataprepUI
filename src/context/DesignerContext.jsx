@@ -78,6 +78,49 @@ export function DesignerProvider({ children }) {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
+  // ── Undo / Redo history (per-job snapshots of nodes, edges, nodeProperties) ──
+  const undoStackRef = useRef({});   // { [jobId]: [ ...snapshots ] }
+  const redoStackRef = useRef({});   // { [jobId]: [ ...snapshots ] }
+  const skipSnapshotRef = useRef(false);
+  const MAX_HISTORY = 50;
+
+  const takeSnapshot = useCallback(() => {
+    if (skipSnapshotRef.current) return;
+    const job = jobs.find((j) => j.id === activeJobId);
+    if (!job) return;
+    const snap = JSON.parse(JSON.stringify({ nodes: job.nodes, edges: job.edges, nodeProperties: job.nodeProperties }));
+    if (!undoStackRef.current[activeJobId]) undoStackRef.current[activeJobId] = [];
+    undoStackRef.current[activeJobId].push(snap);
+    if (undoStackRef.current[activeJobId].length > MAX_HISTORY) undoStackRef.current[activeJobId].shift();
+    // clear redo when a new action happens
+    redoStackRef.current[activeJobId] = [];
+  }, [jobs, activeJobId]);
+
+  // undo/redo are defined after updateActiveJob below
+
+  const canUndo = (undoStackRef.current[activeJobId]?.length || 0) > 0;
+  const canRedo = (redoStackRef.current[activeJobId]?.length || 0) > 0;
+
+  // ── Row counter for auto-naming row edges ──
+  const rowCounterRef = useRef({});  // { [jobId]: number }
+
+  const getNextRowLabel = useCallback(() => {
+    if (!rowCounterRef.current[activeJobId]) {
+      // initialize from existing edges
+      const job = jobs.find((j) => j.id === activeJobId);
+      let max = 0;
+      if (job) {
+        for (const e of job.edges) {
+          const m = e.label && typeof e.label === 'string' && e.label.match(/^row(\d+)$/);
+          if (m) max = Math.max(max, parseInt(m[1], 10));
+        }
+      }
+      rowCounterRef.current[activeJobId] = max;
+    }
+    rowCounterRef.current[activeJobId] += 1;
+    return `row${rowCounterRef.current[activeJobId]}`;
+  }, [jobs, activeJobId]);
+
   // Left sidebar active tab
   const [leftTab, setLeftTab] = useState('palette');
 
@@ -159,6 +202,32 @@ export function DesignerProvider({ children }) {
       )
     );
   }, [activeJobId]);
+
+  const undo = useCallback(() => {
+    const stack = undoStackRef.current[activeJobId];
+    if (!stack || stack.length === 0) return;
+    const job = jobs.find((j) => j.id === activeJobId);
+    if (!job) return;
+    if (!redoStackRef.current[activeJobId]) redoStackRef.current[activeJobId] = [];
+    redoStackRef.current[activeJobId].push(JSON.parse(JSON.stringify({ nodes: job.nodes, edges: job.edges, nodeProperties: job.nodeProperties })));
+    const snap = stack.pop();
+    skipSnapshotRef.current = true;
+    updateActiveJob((j) => ({ ...j, ...snap }));
+    skipSnapshotRef.current = false;
+  }, [jobs, activeJobId, updateActiveJob]);
+
+  const redo = useCallback(() => {
+    const stack = redoStackRef.current[activeJobId];
+    if (!stack || stack.length === 0) return;
+    const job = jobs.find((j) => j.id === activeJobId);
+    if (!job) return;
+    if (!undoStackRef.current[activeJobId]) undoStackRef.current[activeJobId] = [];
+    undoStackRef.current[activeJobId].push(JSON.parse(JSON.stringify({ nodes: job.nodes, edges: job.edges, nodeProperties: job.nodeProperties })));
+    const snap = stack.pop();
+    skipSnapshotRef.current = true;
+    updateActiveJob((j) => ({ ...j, ...snap }));
+    skipSnapshotRef.current = false;
+  }, [jobs, activeJobId, updateActiveJob]);
 
   // ── Job management ─────────────────────────────────
   const createJob = useCallback((name) => {
@@ -251,6 +320,160 @@ export function DesignerProvider({ children }) {
     }));
   }, [jobs, activeJobId, updateActiveJob]);
 
+  // ── Export Job as JSON download (Talend-style template) ──
+  const exportJobAsJson = useCallback(() => {
+    const job = jobs.find((j) => j.id === activeJobId);
+    if (!job) return;
+
+    const { nodes: jNodes, edges: jEdges, nodeProperties: jProps, metadata, contextVariables: ctxVars } = job;
+    const jobName = metadata?.name || 'Untitled_Job';
+    const jobVersion = metadata?.version || '0.1';
+
+    // ── Build stable IDs: tFileInputDelimited_1, tLogRow_2, etc.
+    const typeCounters = {};
+    const idMap = {};
+    for (const node of jNodes) {
+      const cType = node.data.componentType;
+      typeCounters[cType] = (typeCounters[cType] || 0) + 1;
+      idMap[node.id] = `${cType}_${typeCounters[cType]}`;
+    }
+
+    // ── Compute input schema per node from upstream row/iterate edges
+    const nodeInputSchema = {};
+    for (const edge of jEdges) {
+      if (edge.data?.category === 'trigger') continue;
+      const srcSchema = jProps[edge.source]?.__schema;
+      if (Array.isArray(srcSchema) && srcSchema.length > 0) {
+        if (!nodeInputSchema[edge.target]) nodeInputSchema[edge.target] = [];
+        nodeInputSchema[edge.target].push(...srcSchema);
+      }
+    }
+
+    // ── Format schema columns to template style
+    const fmtCols = (cols) =>
+      (cols || []).map((c) => {
+        const col = { name: c.name, type: c.type || 'String', nullable: c.nullable !== false, key: !!c.key };
+        if (c.length != null && c.length !== '') col.length = Number(c.length);
+        if (c.precision != null && c.precision !== '') col.precision = Number(c.precision);
+        return col;
+      });
+
+    // ── Build components
+    const components = jNodes.map((node) => {
+      const cType = node.data.componentType;
+      const stableId = idMap[node.id];
+      const props = jProps[node.id] || {};
+
+      // Config = all properties except __schema
+      const config = {};
+      for (const [k, v] of Object.entries(props)) {
+        if (k === '__schema') continue;
+        config[k] = v;
+      }
+
+      // Input/output connection labels
+      const inputLabels = jEdges
+        .filter((e) => e.target === node.id && e.data?.category !== 'trigger')
+        .map((e) => e.label);
+      const outputLabels = jEdges
+        .filter((e) => e.source === node.id && e.data?.category !== 'trigger')
+        .map((e) => e.label);
+
+      return {
+        id: stableId,
+        type: cType.replace(/^t/, ''),
+        original_type: cType,
+        position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
+        config,
+        schema: {
+          input: fmtCols(nodeInputSchema[node.id]),
+          output: fmtCols(props.__schema),
+        },
+        inputs: inputLabels,
+        outputs: outputLabels,
+      };
+    });
+
+    // ── Build flows (row / iterate edges)
+    const flows = jEdges
+      .filter((e) => e.data?.category !== 'trigger')
+      .map((e) => ({
+        name: e.label,
+        from: idMap[e.source] || e.source,
+        to: idMap[e.target] || e.target,
+        type: e.data?.category === 'iterate' ? 'iterate' : 'flow',
+      }));
+
+    // ── Build triggers
+    const triggers = jEdges
+      .filter((e) => e.data?.category === 'trigger')
+      .map((e) => ({
+        name: e.data?.connectorName || e.label,
+        from: idMap[e.source] || e.source,
+        to: idMap[e.target] || e.target,
+        type: 'trigger',
+      }));
+
+    // ── Compute subjobs (union-find on non-trigger edges)
+    const parent = {};
+    const find = (x) => {
+      if (parent[x] === undefined) parent[x] = x;
+      if (parent[x] !== x) parent[x] = find(parent[x]);
+      return parent[x];
+    };
+    const union = (a, b) => { parent[find(a)] = find(b); };
+    for (const edge of jEdges) {
+      if (edge.data?.category !== 'trigger') union(edge.source, edge.target);
+    }
+    const groups = {};
+    for (const node of jNodes) {
+      const root = find(node.id);
+      if (!groups[root]) groups[root] = [];
+      groups[root].push(idMap[node.id]);
+    }
+    const subjobs = {};
+    let sjIdx = 0;
+    for (const [, members] of Object.entries(groups)) {
+      if (members.length >= 2) {
+        sjIdx++;
+        subjobs[`subjob_${sjIdx}`] = members;
+      }
+    }
+
+    // ── Context variables
+    const ctx = {};
+    if (Array.isArray(ctxVars) && ctxVars.length > 0) {
+      const vars = {};
+      for (const v of ctxVars) vars[v.name] = v.value ?? '';
+      ctx['Default'] = vars;
+    } else {
+      ctx['Default'] = {};
+    }
+
+    // ── Assemble final JSON
+    const output = {
+      job_name: `${jobName}_${jobVersion}`,
+      job_type: 'Standard',
+      default_context: 'Default',
+      context: ctx,
+      components,
+      flows,
+      triggers,
+      subjobs,
+    };
+
+    const json = JSON.stringify(output, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${jobName}_${jobVersion}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [jobs, activeJobId]);
+
   // ── Run Job (simulated) ──
   const runJob = useCallback(() => {
     if (runningJobId) return;
@@ -315,10 +538,31 @@ export function DesignerProvider({ children }) {
   }, [updateActiveJob]);
 
   const onNodesChange = useCallback((changes) => {
-    updateActiveJob((j) => ({
-      ...j,
-      nodes: applyNodeChanges(changes, j.nodes),
-    }));
+    updateActiveJob((j) => {
+      let updated = [...j.nodes];
+      for (const change of changes) {
+        if (change.type === 'position') {
+          updated = updated.map((n) =>
+            n.id === change.id
+              ? { ...n, ...(change.position ? { position: change.position } : {}), dragging: change.dragging }
+              : n
+          );
+        } else if (change.type === 'select') {
+          updated = updated.map((n) =>
+            n.id === change.id ? { ...n, selected: change.selected } : n
+          );
+        } else if (change.type === 'remove') {
+          updated = updated.filter((n) => n.id !== change.id);
+        } else if (change.type === 'dimensions' && change.dimensions) {
+          updated = updated.map((n) =>
+            n.id === change.id
+              ? { ...n, width: change.dimensions.width, height: change.dimensions.height }
+              : n
+          );
+        }
+      }
+      return { ...j, nodes: updated };
+    });
   }, [updateActiveJob]);
 
   const onEdgesChange = useCallback((changes) => {
@@ -333,6 +577,7 @@ export function DesignerProvider({ children }) {
       const def = registry[componentType];
       if (!def) return;
 
+      takeSnapshot();
       const id = `${componentType}_${uuidv4().slice(0, 8)}`;
       const newNode = {
         id,
@@ -355,31 +600,51 @@ export function DesignerProvider({ children }) {
         selectedNodeId: id,
       }));
     },
-    [updateActiveJob]
+    [updateActiveJob, takeSnapshot]
   );
 
   const onConnect = useCallback(
     (connection) => {
+      takeSnapshot();
+      const rowLabel = getNextRowLabel();
       const edge = {
         ...connection,
         id: `e_${uuidv4().slice(0, 8)}`,
         type: 'smoothstep',
         animated: false,
+        label: rowLabel,
+        labelStyle: { fontSize: 10, fontWeight: 600, fill: '#4a90d9' },
+        labelBgStyle: { fill: 'var(--bg-secondary)', fillOpacity: 0.9 },
         style: { stroke: '#4a90d9', strokeWidth: 2 },
         markerEnd: { type: 'arrowclosed', color: '#4a90d9' },
+        data: { connectorName: rowLabel, connectorType: 'row', category: 'row' },
       };
-      updateActiveJob((j) => ({
-        ...j,
-        edges: addEdge(edge, j.edges),
-      }));
+      updateActiveJob((j) => {
+        const newEdges = addEdge(edge, j.edges);
+        // Propagate schema from source to target if target has no schema
+        let newProps = j.nodeProperties;
+        const sourceSchema = newProps[connection.source]?.__schema;
+        const targetSchema = newProps[connection.target]?.__schema;
+        if (Array.isArray(sourceSchema) && sourceSchema.length > 0 && (!Array.isArray(targetSchema) || targetSchema.length === 0)) {
+          newProps = {
+            ...newProps,
+            [connection.target]: {
+              ...(newProps[connection.target] || {}),
+              __schema: sourceSchema.map((col) => ({ ...col })),
+            },
+          };
+        }
+        return { ...j, edges: newEdges, nodeProperties: newProps };
+      });
     },
-    [updateActiveJob]
+    [updateActiveJob, takeSnapshot, getNextRowLabel]
   );
 
   // ── Manual edge creation (used by canvas right-click connector menu) ─────
   const addEdgeManual = useCallback((sourceNodeId, targetNodeId, connectorName, connectorType, connectorLabel, category) => {
     if (sourceNodeId === targetNodeId) return;
 
+    takeSnapshot();
     const EDGE_STYLES = {
       row: { stroke: '#4a90d9', strokeWidth: 2 },
       iterate: { stroke: '#1abc9c', strokeWidth: 2, strokeDasharray: '6 3' },
@@ -393,6 +658,9 @@ export function DesignerProvider({ children }) {
     const edgeStyle = EDGE_STYLES[cat] || EDGE_STYLES.row;
     const edgeColor = EDGE_COLORS[cat] || '#4a90d9';
 
+    // Auto-name row/iterate edges as row1, row2, etc.
+    const edgeLabel = cat === 'trigger' ? connectorLabel : getNextRowLabel();
+
     const edge = {
       id: `e_${uuidv4().slice(0, 8)}`,
       source: sourceNodeId,
@@ -403,17 +671,32 @@ export function DesignerProvider({ children }) {
       animated: cat === 'trigger' || cat === 'iterate',
       style: edgeStyle,
       markerEnd: { type: 'arrowclosed', color: edgeColor },
-      label: connectorLabel,
+      label: edgeLabel,
       labelStyle: { fontSize: 10, fontWeight: 600, fill: edgeColor },
       labelBgStyle: { fill: 'var(--bg-secondary)', fillOpacity: 0.9 },
       data: { connectorName, connectorType, category: cat },
     };
 
-    updateActiveJob((j) => ({
-      ...j,
-      edges: addEdge(edge, j.edges),
-    }));
-  }, [updateActiveJob]);
+    updateActiveJob((j) => {
+      const newEdges = addEdge(edge, j.edges);
+      // Propagate schema for row/iterate connections
+      let newProps = j.nodeProperties;
+      if (cat !== 'trigger') {
+        const sourceSchema = newProps[sourceNodeId]?.__schema;
+        const targetSchema = newProps[targetNodeId]?.__schema;
+        if (Array.isArray(sourceSchema) && sourceSchema.length > 0 && (!Array.isArray(targetSchema) || targetSchema.length === 0)) {
+          newProps = {
+            ...newProps,
+            [targetNodeId]: {
+              ...(newProps[targetNodeId] || {}),
+              __schema: sourceSchema.map((col) => ({ ...col })),
+            },
+          };
+        }
+      }
+      return { ...j, edges: newEdges, nodeProperties: newProps };
+    });
+  }, [updateActiveJob, takeSnapshot, getNextRowLabel]);
 
   const updateNodeProperty = useCallback((nodeId, key, value) => {
     setNodeProperties((prev) => ({
@@ -427,6 +710,7 @@ export function DesignerProvider({ children }) {
 
   const deleteSelectedNode = useCallback(() => {
     if (!selectedNodeId) return;
+    takeSnapshot();
     updateActiveJob((j) => {
       const newProps = { ...j.nodeProperties };
       delete newProps[j.selectedNodeId];
@@ -438,7 +722,7 @@ export function DesignerProvider({ children }) {
         selectedNodeId: null,
       };
     });
-  }, [updateActiveJob, selectedNodeId]);
+  }, [updateActiveJob, selectedNodeId, takeSnapshot]);
 
   const onNodeClick = useCallback((_event, node) => {
     setSelectedNodeId(node.id);
@@ -519,6 +803,7 @@ export function DesignerProvider({ children }) {
   const pasteFromClipboard = useCallback((targetJobId) => {
     if (!clipboard) return;
 
+    takeSnapshot();
     if (clipboard.type === 'subjob') {
       const idMap = {};
       const newNodes = clipboard.nodes.map((node) => {
@@ -531,16 +816,20 @@ export function DesignerProvider({ children }) {
           selected: false,
         };
       });
-      const newEdges = clipboard.edges.map((edge) => ({
-        ...edge,
-        id: `e_${uuidv4().slice(0, 8)}`,
-        source: idMap[edge.source],
-        target: idMap[edge.target],
-      }));
+      const newEdges = clipboard.edges.map((edge) => {
+        const newSource = idMap[edge.source];
+        const newTarget = idMap[edge.target];
+        return {
+          ...edge,
+          id: `e_${uuidv4().slice(0, 8)}`,
+          source: newSource,
+          target: newTarget,
+        };
+      });
       const newProps = {};
       for (const [oldId, props] of Object.entries(clipboard.nodeProperties)) {
         if (idMap[oldId]) {
-          newProps[idMap[oldId]] = { ...props };
+          newProps[idMap[oldId]] = JSON.parse(JSON.stringify(props));
         }
       }
       setJobs((prev) =>
@@ -570,14 +859,14 @@ export function DesignerProvider({ children }) {
             ? {
                 ...j,
                 nodes: [...j.nodes, newNode],
-                nodeProperties: { ...j.nodeProperties, [newId]: { ...props } },
+                nodeProperties: { ...j.nodeProperties, [newId]: JSON.parse(JSON.stringify(props)) },
                 selectedNodeId: newId,
               }
             : j
         )
       );
     }
-  }, [clipboard]);
+  }, [clipboard, takeSnapshot]);
 
   const value = {
     // Registry
@@ -640,6 +929,7 @@ export function DesignerProvider({ children }) {
     removeContextVariable,
     // Job actions
     saveJob,
+    exportJobAsJson,
     runJob,
     pauseJob,
     stopJob,
@@ -650,6 +940,11 @@ export function DesignerProvider({ children }) {
     setReactFlowInstance,
     onDragOver,
     onDrop,
+    // Undo / Redo
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   };
 
   return (

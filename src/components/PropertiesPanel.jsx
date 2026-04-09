@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
-import { X, Settings, Info, Link } from 'lucide-react';
+import { useState, useMemo, useCallback } from 'react';
+import { X, Settings, Info, Link, Database, Pencil } from 'lucide-react';
 import { useDesigner } from '../context/DesignerContext';
 import PropertyRenderer from './PropertyRenderer';
+import SchemaDialog from './SchemaDialog';
 
 export default function PropertiesPanel() {
   const {
@@ -11,9 +12,13 @@ export default function PropertiesPanel() {
     nodeProperties,
     updateNodeProperty,
     setSelectedNodeId,
+    edges,
+    nodes,
+    metadataRepo,
   } = useDesigner();
 
   const [activeTab, setActiveTab] = useState('basic');
+  const [schemaOpen, setSchemaOpen] = useState(false);
 
   const componentDef = useMemo(() => {
     if (!selectedNode) return null;
@@ -21,6 +26,34 @@ export default function PropertiesPanel() {
   }, [selectedNode, registry]);
 
   const propertyValues = selectedNodeId ? nodeProperties[selectedNodeId] || {} : {};
+
+  // Determine if component has inputs (intermediate/target) or is source-only
+  const connectors = selectedNode?.data.connectors || {};
+  const hasInputs = (connectors.inputs || []).length > 0;
+  const hasOutputs = (connectors.outputs || []).length > 0;
+
+  // Get input schema from upstream connected nodes (via row/iterate edges)
+  const inputSchema = useMemo(() => {
+    if (!selectedNodeId || !hasInputs) return [];
+    const incomingEdges = edges.filter(
+      (e) => e.target === selectedNodeId && e.data?.category !== 'trigger'
+    );
+    if (incomingEdges.length === 0) return [];
+    // Collect schema from all upstream sources
+    const combined = [];
+    for (const edge of incomingEdges) {
+      const sourceProps = nodeProperties[edge.source];
+      if (sourceProps?.__schema && Array.isArray(sourceProps.__schema)) {
+        combined.push(...sourceProps.__schema);
+      }
+    }
+    return combined;
+  }, [selectedNodeId, hasInputs, edges, nodeProperties]);
+
+  const handleSchemaChange = useCallback(
+    (val) => updateNodeProperty(selectedNodeId, '__schema', val),
+    [selectedNodeId, updateNodeProperty]
+  );
 
   if (!selectedNode || !componentDef) {
     return (
@@ -37,9 +70,7 @@ export default function PropertiesPanel() {
 
   // Filter properties by active tab and visibility
   const visibleProperties = (componentDef.properties || []).filter((prop) => {
-    // Group filter
     if (prop.group !== activeTab) return false;
-    // Conditional visibility
     if (prop.visibleWhen) {
       const depValue = propertyValues[prop.visibleWhen.key];
       if (depValue !== prop.visibleWhen.eq) return false;
@@ -47,12 +78,13 @@ export default function PropertiesPanel() {
     return true;
   });
 
-  // Connectors summary
-  const connectors = selectedNode.data.connectors || {};
   const inputs = connectors.inputs || [];
   const outputs = connectors.outputs || [];
   const triggerIn = connectors.triggers?.incoming || [];
   const triggerOut = connectors.triggers?.outgoing || [];
+
+  const schemaColumns = propertyValues.__schema || [];
+  const schemaCount = schemaColumns.length;
 
   return (
     <div className="properties-panel">
@@ -96,28 +128,8 @@ export default function PropertiesPanel() {
         </button>
       </div>
 
-      {/* Properties form */}
-      {activeTab !== 'connectors' ? (
-        <div className="panel-body">
-          {visibleProperties.length > 0 ? (
-            visibleProperties.map((prop) => (
-              <PropertyRenderer
-                key={prop.key}
-                property={prop}
-                value={propertyValues[prop.key]}
-                onChange={(val) =>
-                  updateNodeProperty(selectedNodeId, prop.key, val)
-                }
-              />
-            ))
-          ) : (
-            <div className="panel-body__empty">
-              <Info size={16} />
-              <span>No properties in this group</span>
-            </div>
-          )}
-        </div>
-      ) : (
+      {/* Content */}
+      {activeTab === 'connectors' ? (
         /* Connectors tab */
         <div className="panel-body">
           <div className="connectors-section">
@@ -186,6 +198,65 @@ export default function PropertiesPanel() {
             </div>
           </div>
         </div>
+      ) : (
+        <div className="panel-body">
+          {/* Schema row - Talend style, shown at top of basic tab */}
+          {activeTab === 'basic' && (
+            <div className="prop-field schema-prop-row">
+              <label className="prop-label">
+                <Database size={12} /> Schema
+              </label>
+              <div className="schema-prop-row__controls">
+                <select className="prop-select schema-prop-row__type" disabled>
+                  <option>Built-In</option>
+                </select>
+                <button
+                  className="schema-prop-row__edit"
+                  onClick={() => setSchemaOpen(true)}
+                  title="Edit Schema"
+                >
+                  <Pencil size={12} />
+                  Edit Schema
+                  {schemaCount > 0 && (
+                    <span className="schema-prop-row__badge">{schemaCount}</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+          {visibleProperties.length > 0 ? (
+            visibleProperties.map((prop) => (
+              <PropertyRenderer
+                key={prop.key}
+                property={prop}
+                value={propertyValues[prop.key]}
+                onChange={(val) =>
+                  updateNodeProperty(selectedNodeId, prop.key, val)
+                }
+              />
+            ))
+          ) : (
+            activeTab !== 'basic' && (
+              <div className="panel-body__empty">
+                <Info size={16} />
+                <span>No properties in this group</span>
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      {/* Schema Dialog */}
+      {schemaOpen && (
+        <SchemaDialog
+          componentLabel={componentDef.label}
+          hasInputs={hasInputs}
+          inputSchema={inputSchema}
+          outputSchema={schemaColumns}
+          onOutputChange={handleSchemaChange}
+          onClose={() => setSchemaOpen(false)}
+          metadataRepo={metadataRepo}
+        />
       )}
     </div>
   );
