@@ -12,9 +12,12 @@ import {
   FolderOpen,
   Edit3,
   X,
+  Upload,
+  Download,
 } from 'lucide-react';
 import { useDesigner } from '../context/DesignerContext';
 import ContextMenu from './ContextMenu';
+import GitHubJobDialog from './GitHubJobDialog';
 
 export default function JobDesignerPanel() {
   const {
@@ -33,6 +36,9 @@ export default function JobDesignerPanel() {
     clipboard,
     copyNodeToClipboard,
     pasteFromClipboard,
+    importJobFromJson,
+    getExportJsonString,
+    jobMetadata,
   } = useDesigner();
 
   const [expandedSections, setExpandedSections] = useState({
@@ -44,6 +50,7 @@ export default function JobDesignerPanel() {
   const [contextMenu, setContextMenu] = useState(null);
   const [renamingJobId, setRenamingJobId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [githubDialog, setGithubDialog] = useState(null); // { mode: 'push' | 'pull', jobId? }
 
   const toggleSection = (key) => {
     setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -108,6 +115,12 @@ export default function JobDesignerPanel() {
           icon: <Workflow size={12} />,
           onClick: handleNewJob,
         },
+        { separator: true },
+        {
+          label: 'Import from GitHub',
+          icon: <Download size={12} />,
+          onClick: () => setGithubDialog({ mode: 'pull' }),
+        },
       ];
     }
 
@@ -127,6 +140,21 @@ export default function JobDesignerPanel() {
           label: 'Duplicate Job',
           icon: <Copy size={12} />,
           onClick: () => duplicateJob(contextMenu.jobId),
+        },
+        { separator: true },
+        {
+          label: 'Push to GitHub',
+          icon: <Upload size={12} />,
+          onClick: () => {
+            // Switch to this job first so export captures it
+            setActiveJobId(contextMenu.jobId);
+            setGithubDialog({ mode: 'push', jobId: contextMenu.jobId });
+          },
+        },
+        {
+          label: 'Import from GitHub',
+          icon: <Download size={12} />,
+          onClick: () => setGithubDialog({ mode: 'pull' }),
         },
         { separator: true },
         {
@@ -242,6 +270,19 @@ export default function JobDesignerPanel() {
           y={contextMenu.y}
           items={contextMenuItems}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {githubDialog && (
+        <GitHubJobDialog
+          mode={githubDialog.mode}
+          onClose={() => setGithubDialog(null)}
+          onImport={(json) => importJobFromJson(json)}
+          pushJson={githubDialog.mode === 'push' ? getExportJsonString() : null}
+          pushFileName={githubDialog.mode === 'push'
+            ? `${jobMetadata.name || 'Job'}_${jobMetadata.version || '0.1'}.json`
+            : null
+          }
         />
       )}
     </div>

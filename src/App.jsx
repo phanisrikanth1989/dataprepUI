@@ -4,8 +4,9 @@ import DesignerCanvas from './components/DesignerCanvas';
 import PropertiesPanel from './components/PropertiesPanel';
 import JobDesignerPanel from './components/JobDesignerPanel';
 import MetadataPanel from './components/MetadataPanel';
+import GitHubPanel from './components/GitHubPanel';
 import { useDesigner } from './context/DesignerContext';
-import { Sun, Moon, Layers, LayoutList, Database } from 'lucide-react';
+import { Sun, Moon, Layers, LayoutList, Database, Github } from 'lucide-react';
 import './App.css';
 
 function AppLayout() {
@@ -59,11 +60,19 @@ function AppLayout() {
             >
               <Database size={16} />
             </button>
+            <button
+              className={`sidebar-tab ${leftTab === 'repository' ? 'sidebar-tab--active' : ''}`}
+              onClick={() => setLeftTab('repository')}
+              title="GitHub Repository"
+            >
+              <Github size={16} />
+            </button>
           </div>
           <div className="sidebar-content">
             {leftTab === 'palette' && <ComponentPalette />}
             {leftTab === 'designer' && <JobDesignerPanel />}
             {leftTab === 'metadata' && <MetadataPanel />}
+            {leftTab === 'repository' && <GitHubPanel />}
           </div>
         </aside>
 
