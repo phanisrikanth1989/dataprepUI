@@ -396,15 +396,6 @@ export default function DesignerCanvas() {
               <span>{nodes.length} components</span>
               <span>{edges.length} connections</span>
             </div>
-            {clipboard && (
-              <button
-                className="toolbar-btn"
-                onClick={() => pasteFromClipboard(activeJobId)}
-                title={clipboard.type === 'subjob' ? 'Paste copied subjob' : 'Paste copied component'}
-              >
-                Paste: {clipboard.type === 'subjob' ? `Subjob (${clipboard.nodes.length})` : clipboard.node.data.label}
-              </button>
-            )}
             {selectedNode && (
               <button
                 className="toolbar-btn toolbar-btn--danger"

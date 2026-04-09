@@ -236,20 +236,6 @@ export default function JobDesignerPanel() {
         )}
       </div>
 
-      {/* Paste action */}
-      {clipboard && (
-        <div className="jdp-paste-bar">
-          <button
-            className="jdp-paste-btn"
-            onClick={() => pasteFromClipboard(activeJobId)}
-            title="Paste into current job"
-          >
-            <Clipboard size={12} />
-            Paste: {clipboard.type === 'subjob' ? `Subjob (${clipboard.nodes.length})` : clipboard.node.data.label}
-          </button>
-        </div>
-      )}
-
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
