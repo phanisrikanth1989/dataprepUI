@@ -1,0 +1,90 @@
+import { DesignerProvider } from './context/DesignerContext';
+import ComponentPalette from './components/ComponentPalette';
+import DesignerCanvas from './components/DesignerCanvas';
+import PropertiesPanel from './components/PropertiesPanel';
+import JobDesignerPanel from './components/JobDesignerPanel';
+import MetadataPanel from './components/MetadataPanel';
+import { useDesigner } from './context/DesignerContext';
+import { Sun, Moon, Layers, LayoutList, Database } from 'lucide-react';
+import './App.css';
+
+function AppLayout() {
+  const { selectedNode, theme, toggleTheme, leftTab, setLeftTab } = useDesigner();
+
+  return (
+    <div className="app" data-theme={theme}>
+      {/* Header */}
+      <header className="app-header">
+        <div className="app-header__brand">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="4" fill="#4a90d9" />
+            <path d="M6 8h12M6 12h12M6 16h8" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+          <span className="app-header__title">DataPrep Studio</span>
+        </div>
+        <div className="app-header__right">
+          <button
+            className="theme-toggle"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+        </div>
+      </header>
+
+      {/* Main layout */}
+      <div className="app-body">
+        {/* Left sidebar with tabs */}
+        <aside className="app-sidebar">
+          <div className="sidebar-tabs">
+            <button
+              className={`sidebar-tab ${leftTab === 'palette' ? 'sidebar-tab--active' : ''}`}
+              onClick={() => setLeftTab('palette')}
+              title="Components"
+            >
+              <Layers size={16} />
+            </button>
+            <button
+              className={`sidebar-tab ${leftTab === 'designer' ? 'sidebar-tab--active' : ''}`}
+              onClick={() => setLeftTab('designer')}
+              title="Job Designer"
+            >
+              <LayoutList size={16} />
+            </button>
+            <button
+              className={`sidebar-tab ${leftTab === 'metadata' ? 'sidebar-tab--active' : ''}`}
+              onClick={() => setLeftTab('metadata')}
+              title="Metadata"
+            >
+              <Database size={16} />
+            </button>
+          </div>
+          <div className="sidebar-content">
+            {leftTab === 'palette' && <ComponentPalette />}
+            {leftTab === 'designer' && <JobDesignerPanel />}
+            {leftTab === 'metadata' && <MetadataPanel />}
+          </div>
+        </aside>
+
+        <main className="app-main">
+          <DesignerCanvas />
+        </main>
+
+        {selectedNode && (
+          <aside className="app-properties">
+            <PropertiesPanel />
+          </aside>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <DesignerProvider>
+      <AppLayout />
+    </DesignerProvider>
+  );
+}
