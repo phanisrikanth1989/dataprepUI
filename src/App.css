@@ -1940,6 +1940,15 @@ body {
   gap: 0;
 }
 
+.job-tabs__list {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
 .job-tabs::-webkit-scrollbar {
   height: 2px;
 }
