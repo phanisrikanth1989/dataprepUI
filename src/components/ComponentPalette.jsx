@@ -84,17 +84,12 @@ function getIcon(iconName) {
 
 /** Category color mapping */
 const CATEGORY_COLORS = {
-  'File / Input': '#4a90d9',
-  'File / Output': '#e67e22',
-  'File / Utility': '#8e44ad',
-  'Database / Oracle': '#c0392b',
-  'Database / MSSQL': '#2980b9',
+  File: '#4a90d9',
+  Database: '#c0392b',
   Transform: '#27ae60',
-  'Transform / Code': '#16a085',
   Aggregate: '#f39c12',
   Control: '#e74c3c',
   Context: '#9b59b6',
-  Iterate: '#1abc9c',
 };
 
 function getCategoryColor(category) {

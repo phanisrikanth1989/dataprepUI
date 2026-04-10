@@ -2,7 +2,7 @@
   "tFileInputDelimited": {
     "label": "File Input Delimited",
     "icon": "file-text",
-    "category": "File / Input",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -345,7 +345,7 @@
   "tFileInputExcel": {
     "label": "File Input Excel",
     "icon": "file-spreadsheet",
-    "category": "File / Input",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -705,7 +705,7 @@
   "tFileInputJSON": {
     "label": "File Input JSON",
     "icon": "file-json",
-    "category": "File / Input",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -956,7 +956,7 @@
   "tFileInputXML": {
     "label": "File Input XML",
     "icon": "file-code",
-    "category": "File / Input",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -1182,7 +1182,7 @@
   "tFileInputPositional": {
     "label": "File Input Positional",
     "icon": "file-text",
-    "category": "File / Input",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -1455,7 +1455,7 @@
   "tFileInputRaw": {
     "label": "File Input Raw",
     "icon": "file",
-    "category": "File / Input",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -1576,7 +1576,7 @@
   "tFileInputProperties": {
     "label": "File Input Properties",
     "icon": "file-cog",
-    "category": "File / Input",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -1717,7 +1717,7 @@
   "tFileInputMSXML": {
     "label": "File Input MS XML",
     "icon": "file-code",
-    "category": "File / Input",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -1896,7 +1896,7 @@
   "tFileInputFullRow": {
     "label": "File Input Full Row",
     "icon": "file-text",
-    "category": "File / Input",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -2044,7 +2044,7 @@
   "tFileOutputDelimited": {
     "label": "File Output Delimited",
     "icon": "file-output",
-    "category": "File / Output",
+    "category": "File",
     "connectors": {
       "inputs": [
         {
@@ -2344,7 +2344,7 @@
   "tFileOutputExcel": {
     "label": "File Output Excel",
     "icon": "file-spreadsheet",
-    "category": "File / Output",
+    "category": "File",
     "connectors": {
       "inputs": [
         {
@@ -2682,7 +2682,7 @@
   "tAdvancedFileOutputXML": {
     "label": "Advanced File Output XML",
     "icon": "file-code",
-    "category": "File / Output",
+    "category": "File",
     "connectors": {
       "inputs": [
         {
@@ -3095,7 +3095,7 @@
   "tFileOutputPositional": {
     "label": "File Output Positional",
     "icon": "file-text",
-    "category": "File / Output",
+    "category": "File",
     "connectors": {
       "inputs": [
         {
@@ -3363,7 +3363,7 @@
   "tFileOutputEBCDIC": {
     "label": "File Output EBCDIC",
     "icon": "file-binary",
-    "category": "File / Output",
+    "category": "File",
     "connectors": {
       "inputs": [
         {
@@ -3478,7 +3478,7 @@
   "tFileCopy": {
     "label": "File Copy",
     "icon": "copy",
-    "category": "File / Utility",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -3616,7 +3616,7 @@
   "tFileDelete": {
     "label": "File Delete",
     "icon": "trash",
-    "category": "File / Utility",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -3704,7 +3704,7 @@
   "tFileExist": {
     "label": "File Exist",
     "icon": "file-search",
-    "category": "File / Utility",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -3756,7 +3756,7 @@
   "tFileList": {
     "label": "File List",
     "icon": "folder-open",
-    "category": "File / Utility",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -3954,7 +3954,7 @@
   "tFileArchive": {
     "label": "File Archive",
     "icon": "archive",
-    "category": "File / Utility",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -4166,7 +4166,7 @@
   "tFileUnarchive": {
     "label": "File Unarchive",
     "icon": "archive",
-    "category": "File / Utility",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -4308,7 +4308,7 @@
   "tFileTouch": {
     "label": "File Touch",
     "icon": "file-plus",
-    "category": "File / Utility",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -4367,7 +4367,7 @@
   "tFileProperties": {
     "label": "File Properties",
     "icon": "file-info",
-    "category": "File / Utility",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -4426,7 +4426,7 @@
   "tFileRowCount": {
     "label": "File Row Count",
     "icon": "hash",
-    "category": "File / Utility",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -4526,7 +4526,7 @@
   "tFixedFlowInput": {
     "label": "Fixed Flow Input",
     "icon": "table",
-    "category": "File / Input",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -4681,7 +4681,7 @@
   "tSetGlobalVar": {
     "label": "Set Global Variable",
     "icon": "variable",
-    "category": "File / Utility",
+    "category": "File",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -4745,7 +4745,7 @@
   "tOracleConnection": {
     "label": "Oracle Connection",
     "icon": "database",
-    "category": "Database / Oracle",
+    "category": "Database",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -5055,7 +5055,7 @@
   "tOracleInput": {
     "label": "Oracle Input",
     "icon": "database",
-    "category": "Database / Oracle",
+    "category": "Database",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -5387,7 +5387,7 @@
   "tOracleOutput": {
     "label": "Oracle Output",
     "icon": "database",
-    "category": "Database / Oracle",
+    "category": "Database",
     "connectors": {
       "inputs": [
         {
@@ -5691,7 +5691,7 @@
   "tOracleRow": {
     "label": "Oracle Row",
     "icon": "database",
-    "category": "Database / Oracle",
+    "category": "Database",
     "connectors": {
       "inputs": [
         {
@@ -6024,7 +6024,7 @@
   "tOracleCommit": {
     "label": "Oracle Commit",
     "icon": "database",
-    "category": "Database / Oracle",
+    "category": "Database",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -6083,7 +6083,7 @@
   "tOracleClose": {
     "label": "Oracle Close",
     "icon": "database",
-    "category": "Database / Oracle",
+    "category": "Database",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -6135,7 +6135,7 @@
   "tOracleRollback": {
     "label": "Oracle Rollback",
     "icon": "database",
-    "category": "Database / Oracle",
+    "category": "Database",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -6194,7 +6194,7 @@
   "tOracleSP": {
     "label": "Oracle Stored Procedure",
     "icon": "database",
-    "category": "Database / Oracle",
+    "category": "Database",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -6503,7 +6503,7 @@
   "tOracleBulkExec": {
     "label": "Oracle Bulk Exec",
     "icon": "database",
-    "category": "Database / Oracle",
+    "category": "Database",
     "connectors": {
       "inputs": [
         {
@@ -6943,7 +6943,7 @@
   "tMSSqlConnection": {
     "label": "MS SQL Connection",
     "icon": "database",
-    "category": "Database / MSSQL",
+    "category": "Database",
     "connectors": {
       "inputs": [],
       "outputs": [],
@@ -7145,7 +7145,7 @@
   "tMSSqlInput": {
     "label": "MS SQL Input",
     "icon": "database",
-    "category": "Database / MSSQL",
+    "category": "Database",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -7744,7 +7744,7 @@
   "tForeach": {
     "label": "For Each",
     "icon": "repeat",
-    "category": "Iterate",
+    "category": "Transform",
     "connectors": {
       "inputs": [],
       "outputs": [
@@ -7809,7 +7809,7 @@
   "tFlowToIterate": {
     "label": "Flow to Iterate",
     "icon": "repeat",
-    "category": "Iterate",
+    "category": "Transform",
     "connectors": {
       "inputs": [
         {
@@ -12053,7 +12053,7 @@
   "tAggregateSortedRow": {
     "label": "Aggregate Sorted Row",
     "icon": "bar-chart",
-    "category": "Transform",
+    "category": "Aggregate",
     "connectors": {
       "inputs": [
         {
@@ -12167,7 +12167,7 @@
   "tJava": {
     "label": "Java",
     "icon": "code",
-    "category": "Transform / Code",
+    "category": "Transform",
     "connectors": {
       "inputs": [
         {
@@ -12240,7 +12240,7 @@
   "tJavaRow": {
     "label": "Java Row",
     "icon": "code",
-    "category": "Transform / Code",
+    "category": "Transform",
     "connectors": {
       "inputs": [
         {
@@ -12318,7 +12318,7 @@
   "tPython": {
     "label": "Python",
     "icon": "code",
-    "category": "Transform / Code",
+    "category": "Transform",
     "connectors": {
       "inputs": [
         {
@@ -12391,7 +12391,7 @@
   "tPythonRow": {
     "label": "Python Row",
     "icon": "code",
-    "category": "Transform / Code",
+    "category": "Transform",
     "connectors": {
       "inputs": [
         {
@@ -12469,7 +12469,7 @@
   "tPythonDataframe": {
     "label": "Python DataFrame",
     "icon": "code",
-    "category": "Transform / Code",
+    "category": "Transform",
     "connectors": {
       "inputs": [
         {
@@ -12542,7 +12542,7 @@
   "tSwiftTransformer": {
     "label": "Swift Transformer",
     "icon": "zap",
-    "category": "Transform / Code",
+    "category": "Transform",
     "connectors": {
       "inputs": [
         {
