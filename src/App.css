@@ -1698,6 +1698,52 @@ body {
   background: var(--accent-bg);
 }
 
+/* ── Folders in Job Designer Panel ─────────────────── */
+.jdp-folder {
+  margin: 2px 4px;
+}
+
+.jdp-folder__header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+
+.jdp-folder__header:hover {
+  background: var(--bg-tertiary);
+}
+
+.jdp-folder__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jdp-folder__body {
+  padding-left: 10px;
+  border-left: 1px solid var(--border-color);
+  margin-left: 12px;
+}
+
+.jdp-folder__empty {
+  padding: 4px 12px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.jdp-job-item--nested {
+  padding-left: 8px;
+}
+
 /* ── Job Items in Job Designer Panel ──────────────── */
 .jdp-job-item {
   display: flex;

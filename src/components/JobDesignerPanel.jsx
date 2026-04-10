@@ -10,10 +10,13 @@ import {
   Copy,
   Clipboard,
   FolderOpen,
+  FolderPlus,
+  Folder,
   Edit3,
   X,
   Upload,
   Download,
+  GitBranch,
 } from 'lucide-react';
 import { useDesigner } from '../context/DesignerContext';
 import ContextMenu from './ContextMenu';
@@ -39,6 +42,12 @@ export default function JobDesignerPanel() {
     importJobFromJson,
     getExportJsonString,
     jobMetadata,
+    folders,
+    createFolder,
+    renameFolder,
+    deleteFolder,
+    addJobToFolder,
+    removeJobFromFolder,
   } = useDesigner();
 
   const [expandedSections, setExpandedSections] = useState({
@@ -51,7 +60,12 @@ export default function JobDesignerPanel() {
   const [renamingJobId, setRenamingJobId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [githubDialog, setGithubDialog] = useState(null); // { mode: 'push' | 'pull', jobId? }
+  const [renamingFolderId, setRenamingFolderId] = useState(null);
+  const [folderRenameValue, setFolderRenameValue] = useState('');
+  const [expandedFolders, setExpandedFolders] = useState({});
+  const [importTargetFolderId, setImportTargetFolderId] = useState(null);
   const importFileRef = useRef(null);
+  const folderImportFileRef = useRef(null);
 
   const toggleSection = (key) => {
     setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -73,6 +87,51 @@ export default function JobDesignerPanel() {
     e.target.value = '';
   };
 
+  // Folder import handler — imports a job into a specific folder
+  const handleFolderImportJob = useCallback((folderId) => {
+    setImportTargetFolderId(folderId);
+    folderImportFileRef.current?.click();
+  }, []);
+
+  const handleFolderImportFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const jsonStr = ev.target.result;
+        const newJobId = importJobFromJson(jsonStr);
+        if (importTargetFolderId && newJobId) {
+          addJobToFolder(importTargetFolderId, newJobId);
+        }
+      } catch (err) {
+        alert('Invalid job JSON file');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+    setImportTargetFolderId(null);
+  };
+
+  const toggleFolder = useCallback((folderId) => {
+    setExpandedFolders((prev) => ({ ...prev, [folderId]: !prev[folderId] }));
+  }, []);
+
+  const startFolderRename = useCallback((folderId) => {
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) return;
+    setRenamingFolderId(folderId);
+    setFolderRenameValue(folder.name);
+  }, [folders]);
+
+  const commitFolderRename = useCallback(() => {
+    if (renamingFolderId && folderRenameValue.trim()) {
+      renameFolder(renamingFolderId, folderRenameValue.trim());
+    }
+    setRenamingFolderId(null);
+    setFolderRenameValue('');
+  }, [renamingFolderId, folderRenameValue, renameFolder]);
+
   // Group nodes by category
   const grouped = useMemo(() => {
     const groups = {};
@@ -88,6 +147,12 @@ export default function JobDesignerPanel() {
   const handleJobsHeaderContextMenu = useCallback((e) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, type: 'jobsHeader' });
+  }, []);
+
+  const handleFolderContextMenu = useCallback((e, folderId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId });
   }, []);
 
   const handleJobContextMenu = useCallback((e, jobId) => {
@@ -131,6 +196,15 @@ export default function JobDesignerPanel() {
           label: 'Create Job',
           icon: <Workflow size={12} />,
           onClick: handleNewJob,
+        },
+        {
+          label: 'Create Folder',
+          icon: <FolderPlus size={12} />,
+          onClick: () => {
+            const id = createFolder('New Folder');
+            setExpandedFolders((prev) => ({ ...prev, [id]: true }));
+            setTimeout(() => startFolderRename(id), 50);
+          },
         },
         { separator: true },
         {
@@ -189,6 +263,44 @@ export default function JobDesignerPanel() {
       ];
     }
 
+    if (contextMenu.type === 'folder') {
+      return [
+        {
+          label: 'Import Repository',
+          icon: <GitBranch size={12} />,
+          onClick: () => setGithubDialog({ mode: 'pull', targetFolderId: contextMenu.folderId }),
+        },
+        {
+          label: 'Import Job',
+          icon: <Upload size={12} />,
+          onClick: () => handleFolderImportJob(contextMenu.folderId),
+        },
+        { separator: true },
+        {
+          label: 'Create Job in Folder',
+          icon: <Workflow size={12} />,
+          onClick: () => {
+            const count = jobs.length + 1;
+            const jobId = createJob(`New_Job_${count}`);
+            addJobToFolder(contextMenu.folderId, jobId);
+            setExpandedFolders((prev) => ({ ...prev, [contextMenu.folderId]: true }));
+          },
+        },
+        {
+          label: 'Rename Folder',
+          icon: <Edit3 size={12} />,
+          onClick: () => startFolderRename(contextMenu.folderId),
+        },
+        { separator: true },
+        {
+          label: 'Delete Folder',
+          icon: <Trash2 size={12} />,
+          danger: true,
+          onClick: () => deleteFolder(contextMenu.folderId),
+        },
+      ];
+    }
+
     if (contextMenu.type === 'node') {
       const otherJobs = jobs.filter((j) => j.id !== activeJobId);
       const items = [
@@ -226,7 +338,7 @@ export default function JobDesignerPanel() {
     }
 
     return [];
-  }, [contextMenu, jobs, activeJobId, handleNewJob, startRename, duplicateJob, closeJob, setActiveJobId, copyNodeToClipboard, pasteFromClipboard, setSelectedNodeId, deleteSelectedNode]);
+  }, [contextMenu, jobs, activeJobId, handleNewJob, startRename, duplicateJob, closeJob, setActiveJobId, copyNodeToClipboard, pasteFromClipboard, setSelectedNodeId, deleteSelectedNode, createFolder, startFolderRename, deleteFolder, handleFolderImportJob, createJob, addJobToFolder, folders]);
 
   return (
     <div className="job-designer-panel">
@@ -249,6 +361,18 @@ export default function JobDesignerPanel() {
           >
             <Upload size={13} />
           </button>
+          <button
+            className="jdp-section__action"
+            onClick={(e) => {
+              e.stopPropagation();
+              const id = createFolder('New Folder');
+              setExpandedFolders((prev) => ({ ...prev, [id]: true }));
+              setTimeout(() => startFolderRename(id), 50);
+            }}
+            title="Create Folder"
+          >
+            <FolderPlus size={13} />
+          </button>
           <input
             type="file"
             ref={importFileRef}
@@ -256,11 +380,100 @@ export default function JobDesignerPanel() {
             style={{ display: 'none' }}
             onChange={handleImportFileChange}
           />
+          <input
+            type="file"
+            ref={folderImportFileRef}
+            accept=".json"
+            style={{ display: 'none' }}
+            onChange={handleFolderImportFileChange}
+          />
         </div>
 
         {expandedSections.jobs && (
           <div className="jdp-section__body">
-            {jobs.map((job) => (
+            {/* ── Folders ── */}
+            {folders.map((folder) => {
+              const isExpanded = expandedFolders[folder.id];
+              const folderJobs = folder.jobIds
+                .map((jid) => jobs.find((j) => j.id === jid))
+                .filter(Boolean);
+              return (
+                <div key={folder.id} className="jdp-folder">
+                  <div
+                    className="jdp-folder__header"
+                    onClick={() => toggleFolder(folder.id)}
+                    onContextMenu={(e) => handleFolderContextMenu(e, folder.id)}
+                    onDoubleClick={() => startFolderRename(folder.id)}
+                    title="Right-click for Import Repository / Import Job"
+                  >
+                    {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    {isExpanded ? <FolderOpen size={12} /> : <Folder size={12} />}
+                    {renamingFolderId === folder.id ? (
+                      <input
+                        className="jdp-job-rename"
+                        value={folderRenameValue}
+                        onChange={(e) => setFolderRenameValue(e.target.value)}
+                        onBlur={commitFolderRename}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitFolderRename();
+                          if (e.key === 'Escape') { setRenamingFolderId(null); setFolderRenameValue(''); }
+                        }}
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span className="jdp-folder__name">{folder.name}</span>
+                    )}
+                    <span className="jdp-badge">{folderJobs.length}</span>
+                  </div>
+                  {isExpanded && (
+                    <div className="jdp-folder__body">
+                      {folderJobs.map((job) => (
+                        <div
+                          key={job.id}
+                          className={`jdp-job-item jdp-job-item--nested ${activeJobId === job.id ? 'jdp-job-item--active' : ''}`}
+                          onClick={() => setActiveJobId(job.id)}
+                          onContextMenu={(e) => handleJobContextMenu(e, job.id)}
+                          onDoubleClick={() => startRename(job.id)}
+                          title="Right-click for options · Double-click to rename"
+                        >
+                          <Workflow size={12} />
+                          {renamingJobId === job.id ? (
+                            <input
+                              className="jdp-job-rename"
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onBlur={commitRename}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') commitRename();
+                                if (e.key === 'Escape') { setRenamingJobId(null); setRenameValue(''); }
+                              }}
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : (
+                            <span className="jdp-job-item__name">{job.metadata.name}</span>
+                          )}
+                          <span className={`jdp-job-item__status jdp-job-item__status--${job.metadata.status}`}>
+                            {job.metadata.status}
+                          </span>
+                        </div>
+                      ))}
+                      {folderJobs.length === 0 && (
+                        <div className="jdp-folder__empty">No jobs — right-click folder to import</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* ── Unfoldered jobs ── */}
+            {(() => {
+              const folderedJobIds = new Set(folders.flatMap((f) => f.jobIds));
+              return jobs
+                .filter((job) => !folderedJobIds.has(job.id))
+                .map((job) => (
               <div
                 key={job.id}
                 className={`jdp-job-item ${activeJobId === job.id ? 'jdp-job-item--active' : ''}`}
@@ -290,7 +503,8 @@ export default function JobDesignerPanel() {
                   {job.metadata.status}
                 </span>
               </div>
-            ))}
+            ));
+            })()}
           </div>
         )}
       </div>
@@ -308,7 +522,12 @@ export default function JobDesignerPanel() {
         <GitHubJobDialog
           mode={githubDialog.mode}
           onClose={() => setGithubDialog(null)}
-          onImport={(json) => importJobFromJson(json)}
+          onImport={(json) => {
+            const newJobId = importJobFromJson(json);
+            if (githubDialog.targetFolderId && newJobId) {
+              addJobToFolder(githubDialog.targetFolderId, newJobId);
+            }
+          }}
           pushJson={githubDialog.mode === 'push' ? getExportJsonString() : null}
           pushFileName={githubDialog.mode === 'push'
             ? `${jobMetadata.name || 'Job'}_${jobMetadata.version || '0.1'}.json`

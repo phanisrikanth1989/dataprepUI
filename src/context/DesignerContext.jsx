@@ -133,6 +133,42 @@ export function DesignerProvider({ children }) {
   // ── Run Job (simulated) ──
   const [runningJobId, setRunningJobId] = useState(null);
 
+  // ── Workspace Folders ──
+  // Each folder: { id, name, jobIds: [], parentId: null }
+  const [folders, setFolders] = useState([]);
+
+  const createFolder = useCallback((name, parentId = null) => {
+    const id = uuidv4().slice(0, 8);
+    setFolders((prev) => [...prev, { id, name: name || 'New Folder', jobIds: [], parentId }]);
+    return id;
+  }, []);
+
+  const renameFolder = useCallback((folderId, newName) => {
+    setFolders((prev) => prev.map((f) => f.id === folderId ? { ...f, name: newName } : f));
+  }, []);
+
+  const deleteFolder = useCallback((folderId) => {
+    setFolders((prev) => {
+      // Also un-parent any child folders
+      return prev.filter((f) => f.id !== folderId).map((f) =>
+        f.parentId === folderId ? { ...f, parentId: null } : f
+      );
+    });
+  }, []);
+
+  const addJobToFolder = useCallback((folderId, jobId) => {
+    setFolders((prev) => prev.map((f) => {
+      // Remove from any other folder first
+      const cleaned = { ...f, jobIds: f.jobIds.filter((id) => id !== jobId) };
+      if (f.id === folderId) return { ...cleaned, jobIds: [...cleaned.jobIds, jobId] };
+      return cleaned;
+    }));
+  }, []);
+
+  const removeJobFromFolder = useCallback((jobId) => {
+    setFolders((prev) => prev.map((f) => ({ ...f, jobIds: f.jobIds.filter((id) => id !== jobId) })));
+  }, []);
+
   const createMetadataItem = useCallback((category) => {
     const id = uuidv4().slice(0, 8);
     const now = new Date().toISOString().slice(0, 10);
@@ -1272,6 +1308,13 @@ export function DesignerProvider({ children }) {
     updateMetadataItem,
     deleteMetadataItem,
     duplicateMetadataItem,
+    // Workspace folders
+    folders,
+    createFolder,
+    renameFolder,
+    deleteFolder,
+    addJobToFolder,
+    removeJobFromFolder,
     // Context variables
     contextVariables,
     addContextVariable,
