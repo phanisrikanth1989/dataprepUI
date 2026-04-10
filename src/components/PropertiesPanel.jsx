@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { X, Settings, Info, Link, Database, Pencil } from 'lucide-react';
 import { useDesigner } from '../context/DesignerContext';
 import PropertyRenderer from './PropertyRenderer';
@@ -85,6 +85,40 @@ export default function PropertiesPanel() {
 
   const schemaColumns = propertyValues.__schema || [];
   const schemaCount = schemaColumns.length;
+
+  // Auto-populate trim_select table from schema columns
+  useEffect(() => {
+    if (!selectedNodeId || !componentDef) return;
+    const trimSelectProp = (componentDef.properties || []).find(
+      (p) => p.key === 'trim_select' && p.type === 'table'
+    );
+    if (!trimSelectProp || schemaColumns.length === 0) return;
+
+    const schemaNames = schemaColumns.map((col) => col.name);
+    const currentRows = Array.isArray(propertyValues.trim_select)
+      ? propertyValues.trim_select
+      : [];
+
+    // Build a map of existing trim selections by column name
+    const existingMap = {};
+    for (const row of currentRows) {
+      if (row.column) existingMap[row.column] = !!row.trim;
+    }
+
+    // Check if rows already match schema
+    const currentNames = currentRows.map((r) => r.column);
+    const alreadySynced =
+      schemaNames.length === currentNames.length &&
+      schemaNames.every((name, i) => name === currentNames[i]);
+    if (alreadySynced) return;
+
+    // Build new rows from schema, preserving existing trim selections
+    const newRows = schemaNames.map((name) => ({
+      column: name,
+      trim: existingMap[name] ?? false,
+    }));
+    updateNodeProperty(selectedNodeId, 'trim_select', newRows);
+  }, [selectedNodeId, componentDef, schemaColumns, propertyValues.trim_select, updateNodeProperty]);
 
   return (
     <div className="properties-panel">
@@ -233,6 +267,7 @@ export default function PropertiesPanel() {
                 onChange={(val) =>
                   updateNodeProperty(selectedNodeId, prop.key, val)
                 }
+                schemaLinked={prop.key === 'trim_select' && schemaCount > 0}
               />
             ))
           ) : (

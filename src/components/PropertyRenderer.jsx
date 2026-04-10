@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 /**
  * Renders a single property field based on its type definition from the registry.
  */
-export default function PropertyRenderer({ property, value, onChange }) {
+export default function PropertyRenderer({ property, value, onChange, schemaLinked }) {
   const { type, label, placeholder, tooltip, options, allowCustom, columns, min, max, fileTypes, language } = property;
 
   switch (type) {
@@ -136,6 +136,7 @@ export default function PropertyRenderer({ property, value, onChange }) {
             columns={columns || []}
             value={Array.isArray(value) ? value : []}
             onChange={onChange}
+            schemaLinked={schemaLinked}
           />
         </div>
       );
@@ -155,7 +156,7 @@ export default function PropertyRenderer({ property, value, onChange }) {
   }
 }
 
-function TableEditor({ columns, value, onChange }) {
+function TableEditor({ columns, value, onChange, schemaLinked }) {
   const addRow = () => {
     const newRow = {};
     for (const col of columns) {
@@ -183,7 +184,7 @@ function TableEditor({ columns, value, onChange }) {
             {col.label}
           </div>
         ))}
-        <div className="prop-table__th prop-table__th--actions" />
+        {!schemaLinked && <div className="prop-table__th prop-table__th--actions" />}
       </div>
       <div className="prop-table__body">
         {value.map((row, rowIdx) => (
@@ -217,6 +218,7 @@ function TableEditor({ columns, value, onChange }) {
                     type={col.type === 'number' ? 'number' : 'text'}
                     className="prop-input prop-input--sm"
                     value={row[col.key] ?? ''}
+                    readOnly={schemaLinked && col.key === 'column'}
                     onChange={(e) =>
                       updateCell(
                         rowIdx,
@@ -230,21 +232,25 @@ function TableEditor({ columns, value, onChange }) {
                 )}
               </div>
             ))}
-            <div className="prop-table__td prop-table__td--actions">
-              <button
-                className="prop-table__btn"
-                onClick={() => removeRow(rowIdx)}
-                title="Remove row"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
+            {!schemaLinked && (
+              <div className="prop-table__td prop-table__td--actions">
+                <button
+                  className="prop-table__btn"
+                  onClick={() => removeRow(rowIdx)}
+                  title="Remove row"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
-      <button className="prop-table__add" onClick={addRow}>
-        <Plus size={12} /> Add Row
-      </button>
+      {!schemaLinked && (
+        <button className="prop-table__add" onClick={addRow}>
+          <Plus size={12} /> Add Row
+        </button>
+      )}
     </div>
   );
 }
