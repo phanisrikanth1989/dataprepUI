@@ -129,6 +129,23 @@ export default function DesignerCanvas() {
   const [connectingFrom, setConnectingFrom] = useState(null);
   const justStartedConnecting = useRef(false);
   const importFileRef = useRef(null);
+  const [backendOnline, setBackendOnline] = useState(false);
+
+  // Check backend status when in Electron
+  useEffect(() => {
+    if (!window.electronAPI?.isElectron) return;
+    const check = async () => {
+      try {
+        const result = await window.electronAPI.backendStatus();
+        setBackendOnline(result.running);
+      } catch {
+        setBackendOnline(false);
+      }
+    };
+    check();
+    const interval = setInterval(check, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const proOptions = useMemo(() => ({ hideAttribution: true }), []);
 
@@ -556,6 +573,15 @@ export default function DesignerCanvas() {
                     <span className="run-panel__info-label">Connections:</span>
                     <span className="run-panel__info-value">{edges.length}</span>
                   </div>
+                  {window.electronAPI?.isElectron && (
+                    <div className="run-panel__info">
+                      <span className="run-panel__info-label">Backend:</span>
+                      <span className={`run-panel__info-value run-panel__info-value--${backendOnline ? 'completed' : 'error'}`}>
+                        <span className={`backend-dot backend-dot--${backendOnline ? 'on' : 'off'}`} />
+                        {backendOnline ? 'Online' : 'Offline'}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div className="run-panel__console">
                   <div className="run-panel__console-header">Console Output</div>

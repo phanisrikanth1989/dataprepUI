@@ -101,6 +101,27 @@ export default function PropertyRenderer({ property, value, onChange, schemaLink
               placeholder={placeholder || 'Enter file path...'}
               onChange={(e) => onChange(e.target.value)}
             />
+            {window.electronAPI?.isElectron && (
+              <button
+                className="prop-file-browse"
+                onClick={async () => {
+                  const extensions = fileTypes
+                    ? fileTypes.map((ft) => ft.replace('.', ''))
+                    : ['*'];
+                  const path = await window.electronAPI.openFile({
+                    title: `Select ${label}`,
+                    filters: [
+                      { name: 'Supported Files', extensions },
+                      { name: 'All Files', extensions: ['*'] },
+                    ],
+                  });
+                  if (path) onChange(path);
+                }}
+                title="Browse local files"
+              >
+                Browse
+              </button>
+            )}
             {fileTypes && (
               <span className="prop-file-types">
                 {fileTypes.join(', ')}

@@ -780,24 +780,59 @@ export function DesignerProvider({ children }) {
   }, [jobs, activeJobId]);
 
   // ── Run Job (simulated) ──
-  const runJob = useCallback(() => {
+  const runJob = useCallback(async () => {
     if (runningJobId) return;
     setRunningJobId(activeJobId);
     updateActiveJob((j) => ({
       ...j,
       metadata: { ...j.metadata, status: 'running', modified: new Date().toISOString().slice(0, 10) },
     }));
-    setTimeout(() => {
-      setRunningJobId(null);
-      setJobs((prev) =>
-        prev.map((j) =>
-          j.id === activeJobId
-            ? { ...j, metadata: { ...j.metadata, status: 'completed', modified: new Date().toISOString().slice(0, 10) } }
-            : j
-        )
-      );
-    }, 5000);
-  }, [activeJobId, runningJobId, updateActiveJob]);
+
+    // If running inside Electron, send job JSON to FastAPI backend
+    if (window.electronAPI?.isElectron) {
+      try {
+        const jobJson = getExportJsonString();
+        if (!jobJson) throw new Error('No job to export');
+        const result = await window.electronAPI.runJob(jobJson);
+        const success = result.status === 200;
+        setRunningJobId(null);
+        setJobs((prev) =>
+          prev.map((j) =>
+            j.id === activeJobId
+              ? {
+                  ...j,
+                  metadata: {
+                    ...j.metadata,
+                    status: success ? 'completed' : 'error',
+                    modified: new Date().toISOString().slice(0, 10),
+                  },
+                  lastRunResult: result.data || result.error,
+                }
+              : j
+          )
+        );
+      } catch (err) {
+        console.error('Job run failed:', err);
+        setRunningJobId(null);
+        updateActiveJob((j) => ({
+          ...j,
+          metadata: { ...j.metadata, status: 'error', modified: new Date().toISOString().slice(0, 10) },
+        }));
+      }
+    } else {
+      // Browser mode: simulate run
+      setTimeout(() => {
+        setRunningJobId(null);
+        setJobs((prev) =>
+          prev.map((j) =>
+            j.id === activeJobId
+              ? { ...j, metadata: { ...j.metadata, status: 'completed', modified: new Date().toISOString().slice(0, 10) } }
+              : j
+          )
+        );
+      }, 5000);
+    }
+  }, [activeJobId, runningJobId, updateActiveJob, getExportJsonString]);
 
   const pauseJob = useCallback(() => {
     if (runningJobId !== activeJobId) return;

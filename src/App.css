@@ -897,6 +897,24 @@ body {
   gap: 4px;
 }
 
+.prop-file-browse {
+  align-self: flex-start;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.prop-file-browse:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
 .prop-file-types {
   font-size: 10px;
   color: var(--text-muted);
@@ -2701,6 +2719,10 @@ body {
 .run-panel__info-value--completed { color: var(--success); }
 .run-panel__info-value--paused { color: #f59e0b; }
 .run-panel__info-value--stopped { color: var(--danger); }
+
+.backend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+.backend-dot--on  { background: var(--success); box-shadow: 0 0 4px var(--success); }
+.backend-dot--off { background: var(--danger); }
 
 /* ── Console area ── */
 .run-panel__console {
