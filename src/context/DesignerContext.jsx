@@ -499,12 +499,27 @@ export function DesignerProvider({ children }) {
     const newNodes = [];
     const newProps = {};
 
+    // Case-insensitive registry lookup (handles tExtractJSONFields vs tExtractJsonFields etc.)
+    const registryKeys = Object.keys(registry);
+    const findRegistryDef = (key) => {
+      if (registry[key]) return { def: registry[key], resolvedKey: key };
+      const lower = key.toLowerCase();
+      const match = registryKeys.find((k) => k.toLowerCase() === lower);
+      return match ? { def: registry[match], resolvedKey: match } : { def: undefined, resolvedKey: key };
+    };
+
+    // Known column key aliases: registry key → possible JSON export keys
+    const COL_KEY_ALIASES = {
+      query: ['xpath', 'jsonpath', 'json_query', 'xpath_query'],
+      column: ['schema_column', 'col'],
+    };
+
     for (const comp of (data.components || [])) {
-      const cType = comp.original_type || `t${comp.type}`;
+      const rawType = comp.original_type || `t${comp.type}`;
+      const { def, resolvedKey: cType } = findRegistryDef(rawType);
       const internalId = `${cType}_${uuidv4().slice(0, 8)}`;
       idMap[comp.id] = internalId;
 
-      const def = registry[cType];
       newNodes.push({
         id: internalId,
         type: 'talendComponent',
@@ -521,6 +536,29 @@ export function DesignerProvider({ children }) {
 
       // Config + schema → nodeProperties
       const props = { ...(comp.config || {}) };
+
+      // Normalize table property row keys to match registry column definitions
+      if (def?.properties) {
+        for (const propDef of def.properties) {
+          if (propDef.type === 'table' && propDef.columns && Array.isArray(props[propDef.key])) {
+            const expectedKeys = propDef.columns.map((c) => c.key);
+            props[propDef.key] = props[propDef.key].map((row) => {
+              const normalized = {};
+              for (const expKey of expectedKeys) {
+                if (row[expKey] !== undefined) {
+                  normalized[expKey] = row[expKey];
+                } else {
+                  const aliasList = COL_KEY_ALIASES[expKey] || [];
+                  const aliasMatch = aliasList.find((a) => row[a] !== undefined);
+                  normalized[expKey] = aliasMatch ? row[aliasMatch] : (row[expKey] ?? '');
+                }
+              }
+              return normalized;
+            });
+          }
+        }
+      }
+
       if (comp.schema?.output && comp.schema.output.length > 0) {
         props.__schema = comp.schema.output.map((c) => ({
           name: c.name,
@@ -545,18 +583,39 @@ export function DesignerProvider({ children }) {
 
     const newEdges = [];
 
+    // Helper: resolve actual handle IDs from registry connectors
+    const resolveHandles = (fromOrigId, toOrigId) => {
+      const fromComp = (data.components || []).find((c) => c.id === fromOrigId);
+      const toComp = (data.components || []).find((c) => c.id === toOrigId);
+      const fromType = fromComp?.original_type || `t${fromComp?.type}`;
+      const toType = toComp?.original_type || `t${toComp?.type}`;
+      const fromDef = findRegistryDef(fromType).def;
+      const toDef = findRegistryDef(toType).def;
+
+      const outConnectors = fromDef?.connectors?.outputs || [];
+      const outConn = outConnectors.find((o) => o.type === 'row') || outConnectors[0];
+      const sourceHandle = outConn ? `out-${outConn.name}` : 'out-default';
+
+      const inConnectors = toDef?.connectors?.inputs || [];
+      const inConn = inConnectors.find((i) => i.type === 'row') || inConnectors[0];
+      const targetHandle = inConn ? `in-${inConn.name}` : 'in-default';
+
+      return { sourceHandle, targetHandle };
+    };
+
     // Flow edges
     for (const flow of (data.flows || [])) {
       const cat = flow.type === 'iterate' ? 'iterate' : 'row';
       const sourceId = idMap[flow.from] || flow.from;
       const targetId = idMap[flow.to] || flow.to;
       const color = EDGE_COLORS[cat];
+      const { sourceHandle, targetHandle } = resolveHandles(flow.from, flow.to);
       newEdges.push({
         id: `e_${uuidv4().slice(0, 8)}`,
         source: sourceId,
         target: targetId,
-        sourceHandle: `out-${flow.name}`,
-        targetHandle: 'in-main',
+        sourceHandle,
+        targetHandle,
         type: 'smoothstep',
         animated: cat === 'iterate',
         label: flow.name,
