@@ -1,8 +1,9 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { X, Settings, Info, Link, Database, Pencil } from 'lucide-react';
+import { X, Settings, Info, Link, Database, Pencil, Shuffle } from 'lucide-react';
 import { useDesigner } from '../context/DesignerContext';
 import PropertyRenderer from './PropertyRenderer';
 import SchemaDialog from './SchemaDialog';
+import MapEditorDialog from './MapEditorDialog';
 
 export default function PropertiesPanel() {
   const {
@@ -19,11 +20,14 @@ export default function PropertiesPanel() {
 
   const [activeTab, setActiveTab] = useState('basic');
   const [schemaOpen, setSchemaOpen] = useState(false);
+  const [mapEditorOpen, setMapEditorOpen] = useState(false);
 
   const componentDef = useMemo(() => {
     if (!selectedNode) return null;
     return registry[selectedNode.data.componentType] || null;
   }, [selectedNode, registry]);
+
+  const isMapComponent = selectedNode?.data.componentType === 'tMap' || selectedNode?.data.componentType === 'tXmlMap';
 
   const propertyValues = selectedNodeId ? nodeProperties[selectedNodeId] || {} : {};
 
@@ -49,6 +53,27 @@ export default function PropertiesPanel() {
     }
     return combined;
   }, [selectedNodeId, hasInputs, edges, nodeProperties]);
+
+  // Build per-connection input tables for map editor (main + lookups)
+  const inputTables = useMemo(() => {
+    if (!selectedNodeId || !isMapComponent) return [];
+    const incomingEdges = edges.filter(
+      (e) => e.target === selectedNodeId && e.data?.category !== 'trigger'
+    );
+    return incomingEdges.map((edge) => {
+      const sourceNode = nodes.find((n) => n.id === edge.source);
+      const sourceProps = nodeProperties[edge.source];
+      const schema = sourceProps?.__schema || [];
+      const label = edge.label || sourceNode?.data?.label || edge.source;
+      const isLookup = edge.targetHandle && edge.targetHandle !== 'in-main';
+      return { name: label, schema, type: isLookup ? 'lookup' : 'main' };
+    });
+  }, [selectedNodeId, isMapComponent, edges, nodes, nodeProperties]);
+
+  const handleMapConfigChange = useCallback(
+    (val) => updateNodeProperty(selectedNodeId, '__mapConfig', val),
+    [selectedNodeId, updateNodeProperty]
+  );
 
   const handleSchemaChange = useCallback(
     (val) => updateNodeProperty(selectedNodeId, '__schema', val),
@@ -258,6 +283,18 @@ export default function PropertiesPanel() {
               </div>
             </div>
           )}
+          {/* Map Editor button for tMap / tXmlMap */}
+          {activeTab === 'basic' && isMapComponent && (
+            <div className="prop-field map-editor-row">
+              <button
+                className="map-editor-row__btn"
+                onClick={() => setMapEditorOpen(true)}
+              >
+                <Shuffle size={14} />
+                Open Map Editor
+              </button>
+            </div>
+          )}
           {visibleProperties.length > 0 ? (
             visibleProperties.map((prop) => (
               <PropertyRenderer
@@ -291,6 +328,19 @@ export default function PropertiesPanel() {
           onOutputChange={handleSchemaChange}
           onClose={() => setSchemaOpen(false)}
           metadataRepo={metadataRepo}
+        />
+      )}
+
+      {/* Map Editor Dialog */}
+      {mapEditorOpen && isMapComponent && (
+        <MapEditorDialog
+          componentLabel={componentDef.label}
+          nodeId={selectedNodeId}
+          inputTables={inputTables}
+          outputSchema={schemaColumns}
+          mapConfig={propertyValues.__mapConfig}
+          onMapConfigChange={handleMapConfigChange}
+          onClose={() => setMapEditorOpen(false)}
         />
       )}
     </div>
