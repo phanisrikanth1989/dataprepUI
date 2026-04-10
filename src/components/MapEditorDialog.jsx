@@ -597,6 +597,27 @@ export default function MapEditorDialog({
     setOutputs(outputs.map((o) => (o.name === outName ? { ...o, schema: newSchema } : o)));
   }, [outputs, setOutputs]);
 
+  /* ── Auto-map: match input columns to output columns by name ── */
+  const autoMap = useCallback(() => {
+    const allInputCols = (inputTables || []).flatMap((tbl) => {
+      const schema = getInputSchema(tbl.name);
+      return schema.map((col) => ({ table: tbl.name, col: col.name }));
+    });
+    const newOutputs = outputs.map((out) => {
+      const schema = out.schema || [];
+      const existingMappings = out.mappings || [];
+      const newMappings = schema.map((col) => {
+        const existing = existingMappings.find((m) => m.column === col.name);
+        if (existing && existing.expression) return existing;
+        const match = allInputCols.find((ic) => ic.col.toLowerCase() === col.name.toLowerCase());
+        if (match) return { column: col.name, type: col.type, expression: `${match.table}.${match.col}` };
+        return existing || { column: col.name, type: col.type, expression: '' };
+      });
+      return { ...out, mappings: newMappings };
+    });
+    setOutputs(newOutputs);
+  }, [outputs, inputTables, getInputSchema, setOutputs]);
+
   return (
     <div className="map-editor__overlay" onClick={onClose}>
       <div className="tmap" onClick={(e) => e.stopPropagation()}>
@@ -607,7 +628,7 @@ export default function MapEditorDialog({
           <div className="tmap__toolbar-right">
             <span className="tmap__find-label">Find&nbsp;:</span>
             <input className="tmap__find-input" placeholder="" />
-            <button className="tmap__auto-map" title="Auto map!">Auto map!</button>
+            <button className="tmap__auto-map" title="Auto map!" onClick={autoMap}>Auto map!</button>
           </div>
         </div>
 
@@ -803,7 +824,6 @@ export default function MapEditorDialog({
                 onClick={() => moveOutput(selectedOutputIdx, 1)}
                 disabled={selectedOutputIdx >= outputs.length - 1} title="Move down"><ArrowDown size={13} /></button>
               <button className="tmap__output-bar-btn" title="Columns"><Columns size={13} /></button>
-              <span className="tmap__auto-label">Auto map!</span>
             </div>
             {outputs.map((out, idx) => (
               <OutputTablePanel

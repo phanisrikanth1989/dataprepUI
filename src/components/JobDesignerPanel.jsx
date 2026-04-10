@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useRef, useMemo, useCallback } from 'react';
 import {
   Layers,
   ChevronRight,
@@ -51,9 +51,26 @@ export default function JobDesignerPanel() {
   const [renamingJobId, setRenamingJobId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [githubDialog, setGithubDialog] = useState(null); // { mode: 'push' | 'pull', jobId? }
+  const importFileRef = useRef(null);
 
   const toggleSection = (key) => {
     setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleImportJob = () => importFileRef.current?.click();
+  const handleImportFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        importJobFromJson(ev.target.result);
+      } catch (err) {
+        alert('Invalid job JSON file');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   // Group nodes by category
@@ -225,6 +242,20 @@ export default function JobDesignerPanel() {
           <FolderOpen size={13} />
           <span>Job Designer</span>
           <span className="jdp-badge">{jobs.length}</span>
+          <button
+            className="jdp-section__action"
+            onClick={(e) => { e.stopPropagation(); handleImportJob(); }}
+            title="Import Job from JSON file"
+          >
+            <Upload size={13} />
+          </button>
+          <input
+            type="file"
+            ref={importFileRef}
+            accept=".json"
+            style={{ display: 'none' }}
+            onChange={handleImportFileChange}
+          />
         </div>
 
         {expandedSections.jobs && (

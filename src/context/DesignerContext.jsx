@@ -818,6 +818,15 @@ export function DesignerProvider({ children }) {
     }));
   }, [updateActiveJob]);
 
+  const updateEdgeLabel = useCallback((edgeId, newLabel) => {
+    updateActiveJob((j) => ({
+      ...j,
+      edges: j.edges.map((e) =>
+        e.id === edgeId ? { ...e, label: newLabel } : e
+      ),
+    }));
+  }, [updateActiveJob]);
+
   const addComponentToCanvas = useCallback(
     (componentType, position) => {
       const def = registry[componentType];
@@ -1162,6 +1171,7 @@ export function DesignerProvider({ children }) {
     pasteFromClipboard,
     // Connector linking (Talend-style)
     addEdgeManual,
+    updateEdgeLabel,
     // Metadata repository (Talend-style)
     metadataRepo,
     createMetadataItem,

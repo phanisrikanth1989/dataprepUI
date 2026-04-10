@@ -32,6 +32,7 @@ import {
   Trash2,
   Clipboard,
   Download,
+  Upload,
 } from 'lucide-react';
 
 const SubjobGroupNode = memo(function SubjobGroupNode({ data }) {
@@ -110,6 +111,8 @@ export default function DesignerCanvas() {
     activeJobId,
     saveJob,
     exportJobAsJson,
+    importJobFromJson,
+    updateEdgeLabel,
     runJob,
     pauseJob,
     stopJob,
@@ -125,12 +128,41 @@ export default function DesignerCanvas() {
   const [nodeContextMenu, setNodeContextMenu] = useState(null);
   const [connectingFrom, setConnectingFrom] = useState(null);
   const justStartedConnecting = useRef(false);
+  const importFileRef = useRef(null);
 
   const proOptions = useMemo(() => ({ hideAttribution: true }), []);
 
   const isRunning = runningJobId === activeJobId;
   const isPaused = jobMetadata.status === 'paused';
   const status = jobMetadata.status || 'draft';
+
+  /* ── Edge label editing on double-click ── */
+  const handleEdgeDoubleClick = useCallback((evt, edge) => {
+    evt.stopPropagation();
+    const newLabel = prompt('Rename connection:', edge.label || '');
+    if (newLabel !== null && newLabel !== edge.label) {
+      updateEdgeLabel(edge.id, newLabel);
+    }
+  }, [updateEdgeLabel]);
+
+  /* ── Import Job from file ── */
+  const handleImportJob = useCallback(() => {
+    importFileRef.current?.click();
+  }, []);
+  const handleImportFileChange = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        importJobFromJson(ev.target.result);
+      } catch (err) {
+        console.error('Import failed:', err);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }, [importJobFromJson]);
 
   // ── Compute subjobs (connected components from row/iterate edges) ──
   const subjobGroups = useMemo(() => {
@@ -372,6 +404,7 @@ export default function DesignerCanvas() {
           onNodeClick={handleNodeClick}
           onPaneClick={handlePaneClick}
           onNodeContextMenu={handleNodeContextMenu}
+          onEdgeDoubleClick={handleEdgeDoubleClick}
           onInit={setReactFlowInstance}
           onDragOver={onDragOver}
           onDrop={onDrop}
@@ -380,6 +413,8 @@ export default function DesignerCanvas() {
           fitView
           snapToGrid
           snapGrid={[15, 15]}
+          nodesDraggable
+          nodeDragThreshold={2}
           proOptions={proOptions}
           deleteKeyCode="Delete"
           multiSelectionKeyCode="Control"
@@ -417,6 +452,7 @@ export default function DesignerCanvas() {
               <Download size={14} />
               Export JSON
             </button>
+
           </Panel>
 
           {/* Empty state */}

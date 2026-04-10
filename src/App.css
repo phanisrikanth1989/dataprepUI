@@ -1181,6 +1181,24 @@ body {
   border-radius: 10px;
 }
 
+.jdp-section__action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  margin-left: 4px;
+  transition: var(--transition);
+}
+.jdp-section__action:hover {
+  color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
 .jdp-section__body {
   padding: 0 8px 8px;
   overflow-y: auto;
@@ -4094,6 +4112,15 @@ body {
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
+}
+.map-editor-row__btn--icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
+  border-style: solid;
+  border-radius: var(--radius);
+  background: var(--accent-bg);
 }
 .map-editor-row__btn:hover {
   background: var(--accent);

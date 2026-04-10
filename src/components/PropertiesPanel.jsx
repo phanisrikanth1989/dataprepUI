@@ -287,11 +287,11 @@ export default function PropertiesPanel() {
           {activeTab === 'basic' && isMapComponent && (
             <div className="prop-field map-editor-row">
               <button
-                className="map-editor-row__btn"
+                className="map-editor-row__btn map-editor-row__btn--icon"
                 onClick={() => setMapEditorOpen(true)}
+                title="Open Map Editor"
               >
-                <Shuffle size={14} />
-                Open Map Editor
+                <Shuffle size={16} />
               </button>
             </div>
           )}
