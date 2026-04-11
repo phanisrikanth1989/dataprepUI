@@ -511,6 +511,7 @@ export default function MapEditorDialog({
   /* ── Outputs (migrate old format) ── */
   const outputs = useMemo(() => {
     if (config.outputs && config.outputs.length > 0) return config.outputs;
+    if (config.outputs && config.outputs.length === 0) return [];
     return [{
       name: 'out',
       schema: (outputSchema || []).map((c) => ({ ...c })),
@@ -830,8 +831,14 @@ export default function MapEditorDialog({
             <div className="tmap__output-bar">
               <button className="tmap__output-bar-btn" onClick={addOutput} title="Add output"><Plus size={13} /></button>
               <button className="tmap__output-bar-btn tmap__output-bar-btn--danger"
-                onClick={() => { if (outputs.length > 1) { removeOutput(selectedOutputIdx); setSelectedOutputIdx(Math.max(0, selectedOutputIdx - 1)); } }}
-                disabled={outputs.length <= 1} title="Delete selected output"><X size={13} /></button>
+                onClick={() => {
+                  if (outputs.length > 0) {
+                    const newOutputs = outputs.filter((_, i) => i !== selectedOutputIdx);
+                    setOutputs(newOutputs);
+                    setSelectedOutputIdx(Math.max(0, Math.min(selectedOutputIdx, newOutputs.length - 1)));
+                  }
+                }}
+                disabled={outputs.length === 0} title="Delete selected output"><X size={13} /></button>
               <button className="tmap__output-bar-btn"
                 onClick={() => moveOutput(selectedOutputIdx, -1)}
                 disabled={selectedOutputIdx <= 0} title="Move up"><ArrowUp size={13} /></button>
@@ -845,7 +852,7 @@ export default function MapEditorDialog({
                 key={out.name + idx}
                 output={out}
                 onUpdate={(val) => updateOutput(idx, val)}
-                onRemove={outputs.length > 1 ? () => removeOutput(idx) : undefined}
+                onRemove={() => removeOutput(idx)}
                 onMoveUp={idx > 0 ? () => moveOutput(idx, -1) : undefined}
                 onMoveDown={idx < outputs.length - 1 ? () => moveOutput(idx, 1) : undefined}
                 onSelect={() => { selectOutput(out.name); setSelectedOutputIdx(idx); }}
