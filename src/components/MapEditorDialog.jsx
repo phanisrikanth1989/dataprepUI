@@ -392,24 +392,43 @@ function OutputTablePanel({ output, onUpdate, onRemove, onMoveUp, onMoveDown, on
         <input className="tmap-output__name-input" value={output.name}
           onClick={(e) => e.stopPropagation()}
           onChange={(e) => onUpdate({ ...output, name: e.target.value })} />
-        {output.isReject && <span className="tmap-output__badge tmap-output__badge--reject">Reject</span>}
-        {output.isInnerJoinReject && <span className="tmap-output__badge tmap-output__badge--ij">IJ Reject</span>}
         <div className="tmap-output__toolbar">
           <button className="tmap-output__tool-btn" onClick={(e) => { e.stopPropagation(); onUpdate({ ...output, schema: [...(output.schema || []), newSchemaCol((output.schema || []).length)] }); }}
             title="Add column"><Plus size={12} /></button>
           <button className="tmap-output__tool-btn" onClick={importSchema} title="Import schema"><Upload size={12} /></button>
           <button className="tmap-output__tool-btn" onClick={exportSchema} title="Export schema"><Download size={12} /></button>
-          <button className="tmap-output__tool-btn" onClick={(e) => { e.stopPropagation(); onUpdate({ ...output, isReject: !output.isReject }); }}
-            title={output.isReject ? 'Remove reject' : 'Set as reject'}>⚠</button>
-          <button className="tmap-output__tool-btn" onClick={(e) => { e.stopPropagation(); onUpdate({ ...output, isInnerJoinReject: !output.isInnerJoinReject }); }}
-            title="Toggle Inner Join Reject">⊘</button>
           <button className="tmap-output__tool-btn" onClick={(e) => { e.stopPropagation(); setCollapsed((c) => !c); }}
-            title={collapsed ? 'Expand' : 'Collapse'}><Columns size={12} /></button>
+            title={collapsed ? 'Expand' : 'Collapse'}>{collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</button>
         </div>
       </div>
 
       {!collapsed && (
         <>
+          {/* ── Talend-style settings rows ── */}
+          <div className="tmap-output__settings">
+            <div className="tmap-output__settings-row">
+              <span className="tmap-output__settings-lbl">Catch output reject</span>
+              <select className="tmap-output__settings-bool"
+                value={output.isReject ? 'true' : 'false'}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => { e.stopPropagation(); onUpdate({ ...output, isReject: e.target.value === 'true' }); }}>
+                <option value="false">false</option>
+                <option value="true">true</option>
+              </select>
+            </div>
+            <div className="tmap-output__settings-row">
+              <span className="tmap-output__settings-lbl">Catch lookup inner join reject</span>
+              <select className="tmap-output__settings-bool"
+                value={output.isInnerJoinReject ? 'true' : 'false'}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => { e.stopPropagation(); onUpdate({ ...output, isInnerJoinReject: e.target.value === 'true' }); }}>
+                <option value="false">false</option>
+                <option value="true">true</option>
+              </select>
+            </div>
+          </div>
+
+          {/* ── Expression filter row ── */}
           <div className="tmap-output__filter">
             <Filter size={11} className="tmap-output__filter-icon" />
             <input
@@ -419,10 +438,6 @@ function OutputTablePanel({ output, onUpdate, onRemove, onMoveUp, onMoveDown, on
               onChange={(e) => { e.stopPropagation(); onUpdate({ ...output, filter: e.target.value }); }}
               onClick={(e) => e.stopPropagation()}
             />
-            <div className="tmap-output__filter-actions">
-              <button className="tmap-output__filter-btn" title="Sort ascending" onClick={(e) => e.stopPropagation()}><ArrowUp size={10} /></button>
-              <button className="tmap-output__filter-btn" title="Sort descending" onClick={(e) => e.stopPropagation()}><ArrowDown size={10} /></button>
-            </div>
             <button className="tmap-output__expr-btn" title="Expression Builder"
               onClick={(e) => { e.stopPropagation(); setExprTarget({ idx: -1, isFilter: true }); }}>…</button>
           </div>

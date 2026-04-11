@@ -4506,6 +4506,8 @@ body {
 .tmap-var__inp--name {
   font-weight: 600;
   font-family: inherit;
+  width: 80px;
+  max-width: 80px;
 }
 .tmap-var__sel {
   font-size: 11px;
@@ -4634,6 +4636,40 @@ body {
 }
 .tmap-output__tool-btn:hover { background: var(--bg-hover); border-color: var(--border-color); color: var(--text-primary); }
 .tmap-output__tool-btn--danger:hover { color: var(--danger); }
+
+/* Output settings panel (Talend-style) */
+.tmap-output__settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 4px 8px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 11px;
+}
+.tmap-output__settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+.tmap-output__settings-lbl {
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  flex: 1;
+}
+.tmap-output__settings-bool {
+  font-size: 11px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+  cursor: pointer;
+  min-width: 52px;
+}
+.tmap-output__settings-bool:focus { outline: none; border-color: var(--accent); }
 
 /* Filter bar */
 .tmap-output__filter {
