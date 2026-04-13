@@ -7578,7 +7578,23 @@
           {
             "key": "function",
             "label": "Function",
-            "type": "text"
+            "type": "select",
+            "default": "sum",
+            "options": [
+              { "value": "count", "label": "Count" },
+              { "value": "count_distinct", "label": "Count (Distinct)" },
+              { "value": "sum", "label": "Sum" },
+              { "value": "avg", "label": "Average" },
+              { "value": "min", "label": "Min" },
+              { "value": "max", "label": "Max" },
+              { "value": "first", "label": "First" },
+              { "value": "last", "label": "Last" },
+              { "value": "list", "label": "List" },
+              { "value": "list_distinct", "label": "List (Distinct)" },
+              { "value": "std_dev", "label": "Standard Deviation" },
+              { "value": "variance", "label": "Variance" },
+              { "value": "median", "label": "Median" }
+            ]
           },
           {
             "key": "ignore_null",
@@ -9069,12 +9085,41 @@
           {
             "key": "function",
             "label": "Function",
-            "type": "text"
+            "type": "select",
+            "default": "",
+            "options": [
+              { "value": "", "label": "" },
+              { "value": "ABSOLUTE_VALUE", "label": "Absolute Value" },
+              { "value": "LOWER_CASE", "label": "Lower Case" },
+              { "value": "UPPER_CASE", "label": "Upper Case" },
+              { "value": "FIRST_CHARACTER_LOWER_CASE", "label": "First Char Lower Case" },
+              { "value": "FIRST_CHARACTER_UPPER_CASE", "label": "First Char Upper Case" },
+              { "value": "LENGTH", "label": "Length" },
+              { "value": "TRIM", "label": "Trim" },
+              { "value": "LEFT_TRIM", "label": "Left Trim" },
+              { "value": "RIGHT_TRIM", "label": "Right Trim" },
+              { "value": "REPLACE", "label": "Replace" },
+              { "value": "MATCH", "label": "Match" }
+            ]
           },
           {
             "key": "operator",
             "label": "Operator",
-            "type": "text"
+            "type": "select",
+            "default": "==",
+            "options": [
+              { "value": "==", "label": "== (equals)" },
+              { "value": "!=", "label": "!= (not equals)" },
+              { "value": "<", "label": "< (less than)" },
+              { "value": "<=", "label": "<= (less or equal)" },
+              { "value": ">", "label": "> (greater than)" },
+              { "value": ">=", "label": ">= (greater or equal)" },
+              { "value": "MATCHES", "label": "Matches (regex)" },
+              { "value": "CONTAINS", "label": "Contains" },
+              { "value": "NOT_CONTAINS", "label": "Not Contains" },
+              { "value": "STARTS_WITH", "label": "Starts With" },
+              { "value": "ENDS_WITH", "label": "Ends With" }
+            ]
           },
           {
             "key": "rvalue",
@@ -12138,7 +12183,23 @@
           {
             "key": "function",
             "label": "Function",
-            "type": "text"
+            "type": "select",
+            "default": "sum",
+            "options": [
+              { "value": "count", "label": "Count" },
+              { "value": "count_distinct", "label": "Count (Distinct)" },
+              { "value": "sum", "label": "Sum" },
+              { "value": "avg", "label": "Average" },
+              { "value": "min", "label": "Min" },
+              { "value": "max", "label": "Max" },
+              { "value": "first", "label": "First" },
+              { "value": "last", "label": "Last" },
+              { "value": "list", "label": "List" },
+              { "value": "list_distinct", "label": "List (Distinct)" },
+              { "value": "std_dev", "label": "Standard Deviation" },
+              { "value": "variance", "label": "Variance" },
+              { "value": "median", "label": "Median" }
+            ]
           },
           {
             "key": "ignore_null",
