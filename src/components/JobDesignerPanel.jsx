@@ -17,10 +17,12 @@ import {
   Upload,
   Download,
   Search,
+  FileText,
 } from 'lucide-react';
 import { useDesigner } from '../context/DesignerContext';
 import ContextMenu from './ContextMenu';
 import GitHubJobDialog from './GitHubJobDialog';
+import { exportJobAsPdf } from '../services/exportPdf';
 
 export default function JobDesignerPanel() {
   const {
@@ -40,9 +42,12 @@ export default function JobDesignerPanel() {
     copyNodeToClipboard,
     pasteFromClipboard,
     importJobFromJson,
+    exportJobAsJson,
     getExportJsonString,
     jobMetadata,
     dirtyJobIds,
+    reactFlowWrapper,
+    registry,
   } = useDesigner();
 
   const [expandedSections, setExpandedSections] = useState({
@@ -218,6 +223,11 @@ export default function JobDesignerPanel() {
         },
         { separator: true },
         {
+          label: 'Import Job (JSON)',
+          icon: <Upload size={12} />,
+          onClick: handleImportJob,
+        },
+        {
           label: 'Import from GitHub',
           icon: <Download size={12} />,
           onClick: () => setGithubDialog({ mode: 'pull' }),
@@ -266,10 +276,43 @@ export default function JobDesignerPanel() {
         },
         { separator: true },
         {
+          label: 'Export as JSON',
+          icon: <Download size={12} />,
+          onClick: () => {
+            setActiveJobId(contextMenu.jobId);
+            setTimeout(() => exportJobAsJson(), 0);
+          },
+        },
+        {
+          label: 'Export as PDF',
+          icon: <FileText size={12} />,
+          onClick: () => {
+            const job = jobs.find((j) => j.id === contextMenu.jobId);
+            if (!job) return;
+            const canvasEl = reactFlowWrapper?.current?.querySelector('.react-flow__viewport');
+            exportJobAsPdf({
+              job: {
+                nodes: job.nodes || [],
+                edges: job.edges || [],
+                nodeProperties: job.nodeProperties || {},
+                metadata: job.metadata || {},
+                contextVariables: job.contextVariables || [],
+              },
+              registry,
+              canvasElement: contextMenu.jobId === activeJobId ? canvasEl : null,
+            });
+          },
+        },
+        {
+          label: 'Import Job (JSON)',
+          icon: <Upload size={12} />,
+          onClick: handleImportJob,
+        },
+        { separator: true },
+        {
           label: 'Push to GitHub',
           icon: <Upload size={12} />,
           onClick: () => {
-            // Switch to this job first so export captures it
             setActiveJobId(contextMenu.jobId);
             setGithubDialog({ mode: 'push', jobId: contextMenu.jobId });
           },
@@ -337,7 +380,7 @@ export default function JobDesignerPanel() {
     }
 
     return [];
-  }, [contextMenu, jobs, activeJobId, handleNewJob, handleNewFolder, handleNewJobInFolder, startRename, startRenameFolder, deleteFolder, duplicateJob, closeJob, setActiveJobId, copyNodeToClipboard, pasteFromClipboard, setSelectedNodeId, deleteSelectedNode]);
+  }, [contextMenu, jobs, activeJobId, handleNewJob, handleNewFolder, handleNewJobInFolder, startRename, startRenameFolder, deleteFolder, duplicateJob, closeJob, setActiveJobId, copyNodeToClipboard, pasteFromClipboard, setSelectedNodeId, deleteSelectedNode, exportJobAsJson, registry, reactFlowWrapper, handleImportJob]);
 
   return (
     <div className="job-designer-panel">

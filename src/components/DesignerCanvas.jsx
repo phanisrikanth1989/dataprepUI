@@ -267,6 +267,10 @@ export default function DesignerCanvas() {
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
+      if (e.ctrlKey && e.key === 's') {
+        e.preventDefault();
+        saveJob();
+      }
       if (e.ctrlKey && e.key === 'c' && selectedNodeId) {
         e.preventDefault();
         copyNodeToClipboard(selectedNodeId);
@@ -292,7 +296,7 @@ export default function DesignerCanvas() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, clipboard, activeJobId, copyNodeToClipboard, pasteFromClipboard, undo, redo, quickSearch, openQuickSearch]);
+  }, [selectedNodeId, clipboard, activeJobId, copyNodeToClipboard, pasteFromClipboard, undo, redo, quickSearch, openQuickSearch, saveJob]);
 
   // Auto-focus quick search input
   useEffect(() => {
@@ -501,20 +505,6 @@ export default function DesignerCanvas() {
                   Delete
                 </button>
               )}
-            </Panel>
-          )}
-
-          {/* Top-right: Save */}
-          {jobs.length > 0 && (
-            <Panel position="top-right" className="canvas-toolbar">
-              <button className="toolbar-btn toolbar-btn--primary" onClick={saveJob} title="Save Job (Ctrl+S)">
-                <Save size={14} />
-                Save
-              </button>
-              <button className="toolbar-btn" onClick={exportJobAsJson} title="Export Job as JSON">
-                <Download size={14} />
-                Export JSON
-              </button>
             </Panel>
           )}
 

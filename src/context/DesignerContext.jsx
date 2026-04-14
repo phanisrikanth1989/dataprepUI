@@ -951,7 +951,7 @@ export function DesignerProvider({ children }) {
         ...j,
         nodes: [...j.nodes.map((n) => ({ ...n, selected: false })), newNode],
         nodeProperties: { ...j.nodeProperties, [id]: buildDefaults(componentType) },
-        selectedNodeId: id,
+        selectedNodeId: null,
       }));
     },
     [updateActiveJob, takeSnapshot]
