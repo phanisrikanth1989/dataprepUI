@@ -141,7 +141,7 @@ export default function ComponentPalette() {
 
   // Expand all when searching
   const isExpanded = (cat) =>
-    searchTerm.trim() ? true : expandedCategories[cat] !== false;
+    searchTerm.trim() ? true : expandedCategories[cat] === true;
 
   return (
     <div className="component-palette">

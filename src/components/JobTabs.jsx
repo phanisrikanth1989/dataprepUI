@@ -11,6 +11,7 @@ export default function JobTabs() {
     closeJob,
     renameJob,
     duplicateJob,
+    dirtyJobIds,
   } = useDesigner();
 
   const [contextMenu, setContextMenu] = useState(null);
@@ -84,9 +85,13 @@ export default function JobTabs() {
                 onClick={(e) => e.stopPropagation()}
               />
             ) : (
-              <span className="job-tab__name">{job.metadata.name}</span>
+              <span className="job-tab__name">
+                {dirtyJobIds.has(job.id) ? `*${job.metadata.name}` : job.metadata.name}
+              </span>
             )}
-            <span className="job-tab__status">{job.metadata.status}</span>
+            {!dirtyJobIds.has(job.id) && (
+              <span className="job-tab__status">{job.metadata.status}</span>
+            )}
             <button
               className="job-tab__close"
               onClick={(e) => {

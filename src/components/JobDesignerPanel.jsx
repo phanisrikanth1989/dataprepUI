@@ -10,10 +10,13 @@ import {
   Copy,
   Clipboard,
   FolderOpen,
+  FolderPlus,
+  Folder,
   Edit3,
   X,
   Upload,
   Download,
+  Search,
 } from 'lucide-react';
 import { useDesigner } from '../context/DesignerContext';
 import ContextMenu from './ContextMenu';
@@ -39,6 +42,7 @@ export default function JobDesignerPanel() {
     importJobFromJson,
     getExportJsonString,
     jobMetadata,
+    dirtyJobIds,
   } = useDesigner();
 
   const [expandedSections, setExpandedSections] = useState({
@@ -52,6 +56,17 @@ export default function JobDesignerPanel() {
   const [renameValue, setRenameValue] = useState('');
   const [githubDialog, setGithubDialog] = useState(null); // { mode: 'push' | 'pull', jobId? }
   const importFileRef = useRef(null);
+
+  // ── Folder state ──
+  const [folders, setFolders] = useState([]);
+  const [expandedFolders, setExpandedFolders] = useState({});
+  const [renamingFolderId, setRenamingFolderId] = useState(null);
+  const [renameFolderValue, setRenameFolderValue] = useState('');
+  const [jobSearchTerm, setJobSearchTerm] = useState('');
+  // ── Create Job dialog ──
+  const [createJobDialog, setCreateJobDialog] = useState(null); // null or { folderId?: string }
+  const [newJobName, setNewJobName] = useState('');
+  const [newJobDesc, setNewJobDesc] = useState('');
 
   const toggleSection = (key) => {
     setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -96,6 +111,12 @@ export default function JobDesignerPanel() {
     setContextMenu({ x: e.clientX, y: e.clientY, type: 'job', jobId });
   }, []);
 
+  const handleFolderContextMenu = useCallback((e, folderId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId });
+  }, []);
+
   const handleNodeContextMenu = useCallback((e, nodeId) => {
     e.preventDefault();
     e.stopPropagation();
@@ -103,9 +124,67 @@ export default function JobDesignerPanel() {
   }, []);
 
   const handleNewJob = useCallback(() => {
-    const count = jobs.length + 1;
-    createJob(`New_Job_${count}`);
-  }, [jobs.length, createJob]);
+    setNewJobName(`New_Job_${jobs.length + 1}`);
+    setNewJobDesc('');
+    setCreateJobDialog({});
+  }, [jobs.length]);
+
+  const handleNewFolder = useCallback(() => {
+    const count = folders.length + 1;
+    const id = `folder_${Date.now()}`;
+    setFolders((prev) => [...prev, { id, name: `New_Folder_${count}`, jobIds: [] }]);
+    setExpandedFolders((prev) => ({ ...prev, [id]: true }));
+  }, [folders.length]);
+
+  const handleNewJobInFolder = useCallback((folderId) => {
+    setNewJobName(`New_Job_${jobs.length + 1}`);
+    setNewJobDesc('');
+    setCreateJobDialog({ folderId });
+  }, [jobs.length]);
+
+  const commitCreateJob = useCallback(() => {
+    if (!newJobName.trim()) return;
+    const jobId = createJob(newJobName.trim(), newJobDesc.trim());
+    if (createJobDialog?.folderId) {
+      setFolders((prev) =>
+        prev.map((f) => f.id === createJobDialog.folderId ? { ...f, jobIds: [...f.jobIds, jobId] } : f)
+      );
+    }
+    setCreateJobDialog(null);
+    setNewJobName('');
+    setNewJobDesc('');
+  }, [newJobName, newJobDesc, createJob, createJobDialog]);
+
+  const cancelCreateJob = useCallback(() => {
+    setCreateJobDialog(null);
+    setNewJobName('');
+    setNewJobDesc('');
+  }, []);
+
+  const toggleFolder = useCallback((folderId) => {
+    setExpandedFolders((prev) => ({ ...prev, [folderId]: !prev[folderId] }));
+  }, []);
+
+  const startRenameFolder = useCallback((folderId) => {
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) return;
+    setRenamingFolderId(folderId);
+    setRenameFolderValue(folder.name);
+  }, [folders]);
+
+  const commitRenameFolder = useCallback(() => {
+    if (renamingFolderId && renameFolderValue.trim()) {
+      setFolders((prev) =>
+        prev.map((f) => f.id === renamingFolderId ? { ...f, name: renameFolderValue.trim() } : f)
+      );
+    }
+    setRenamingFolderId(null);
+    setRenameFolderValue('');
+  }, [renamingFolderId, renameFolderValue]);
+
+  const deleteFolder = useCallback((folderId) => {
+    setFolders((prev) => prev.filter((f) => f.id !== folderId));
+  }, []);
 
   const startRename = useCallback((jobId) => {
     const job = jobs.find((j) => j.id === jobId);
@@ -132,11 +211,38 @@ export default function JobDesignerPanel() {
           icon: <Workflow size={12} />,
           onClick: handleNewJob,
         },
+        {
+          label: 'Create Folder',
+          icon: <FolderPlus size={12} />,
+          onClick: handleNewFolder,
+        },
         { separator: true },
         {
           label: 'Import from GitHub',
           icon: <Download size={12} />,
           onClick: () => setGithubDialog({ mode: 'pull' }),
+        },
+      ];
+    }
+
+    if (contextMenu.type === 'folder') {
+      return [
+        {
+          label: 'Create Job in Folder',
+          icon: <Workflow size={12} />,
+          onClick: () => handleNewJobInFolder(contextMenu.folderId),
+        },
+        {
+          label: 'Rename Folder',
+          icon: <Edit3 size={12} />,
+          onClick: () => startRenameFolder(contextMenu.folderId),
+        },
+        { separator: true },
+        {
+          label: 'Delete Folder',
+          icon: <Trash2 size={12} />,
+          danger: true,
+          onClick: () => deleteFolder(contextMenu.folderId),
         },
       ];
     }
@@ -178,6 +284,11 @@ export default function JobDesignerPanel() {
           label: 'Create Job',
           icon: <Workflow size={12} />,
           onClick: handleNewJob,
+        },
+        {
+          label: 'Create Folder',
+          icon: <FolderPlus size={12} />,
+          onClick: handleNewFolder,
         },
         { separator: true },
         {
@@ -226,7 +337,7 @@ export default function JobDesignerPanel() {
     }
 
     return [];
-  }, [contextMenu, jobs, activeJobId, handleNewJob, startRename, duplicateJob, closeJob, setActiveJobId, copyNodeToClipboard, pasteFromClipboard, setSelectedNodeId, deleteSelectedNode]);
+  }, [contextMenu, jobs, activeJobId, handleNewJob, handleNewFolder, handleNewJobInFolder, startRename, startRenameFolder, deleteFolder, duplicateJob, closeJob, setActiveJobId, copyNodeToClipboard, pasteFromClipboard, setSelectedNodeId, deleteSelectedNode]);
 
   return (
     <div className="job-designer-panel">
@@ -260,7 +371,106 @@ export default function JobDesignerPanel() {
 
         {expandedSections.jobs && (
           <div className="jdp-section__body">
-            {jobs.map((job) => (
+            {/* Job search */}
+            <div className="jdp-search">
+              <Search size={12} className="jdp-search__icon" />
+              <input
+                className="jdp-search__input"
+                type="text"
+                placeholder="Search jobs..."
+                value={jobSearchTerm}
+                onChange={(e) => setJobSearchTerm(e.target.value)}
+              />
+              {jobSearchTerm && (
+                <button className="jdp-search__clear" onClick={() => setJobSearchTerm('')}>
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+            {/* Folders */}
+            {folders.map((folder) => {
+              const folderJobs = folder.jobIds
+                .map((jid) => jobs.find((j) => j.id === jid))
+                .filter(Boolean)
+                .filter((job) => !jobSearchTerm.trim() || job.metadata.name.toLowerCase().includes(jobSearchTerm.toLowerCase()));
+              if (jobSearchTerm.trim() && folderJobs.length === 0 && !folder.name.toLowerCase().includes(jobSearchTerm.toLowerCase())) return null;
+              return (
+                <div key={folder.id} className="jdp-folder">
+                  <div
+                    className="jdp-folder__header"
+                    onClick={() => toggleFolder(folder.id)}
+                    onContextMenu={(e) => handleFolderContextMenu(e, folder.id)}
+                    onDoubleClick={() => startRenameFolder(folder.id)}
+                    title="Right-click for options · Double-click to rename"
+                  >
+                    {expandedFolders[folder.id] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    {expandedFolders[folder.id] ? <FolderOpen size={12} /> : <Folder size={12} />}
+                    {renamingFolderId === folder.id ? (
+                      <input
+                        className="jdp-job-rename"
+                        value={renameFolderValue}
+                        onChange={(e) => setRenameFolderValue(e.target.value)}
+                        onBlur={commitRenameFolder}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitRenameFolder();
+                          if (e.key === 'Escape') { setRenamingFolderId(null); setRenameFolderValue(''); }
+                        }}
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span className="jdp-folder__name">{folder.name}</span>
+                    )}
+                    <span className="jdp-badge">{folderJobs.length}</span>
+                  </div>
+                  {expandedFolders[folder.id] && (
+                    <div className="jdp-folder__body">
+                      {folderJobs.map((job) => (
+                        <div
+                          key={job.id}
+                          className={`jdp-job-item ${activeJobId === job.id ? 'jdp-job-item--active' : ''}`}
+                          onClick={() => setActiveJobId(job.id)}
+                          onContextMenu={(e) => handleJobContextMenu(e, job.id)}
+                          onDoubleClick={() => startRename(job.id)}
+                          title="Right-click for options · Double-click to rename"
+                        >
+                          <Workflow size={12} />
+                          {renamingJobId === job.id ? (
+                            <input
+                              className="jdp-job-rename"
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onBlur={commitRename}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') commitRename();
+                                if (e.key === 'Escape') { setRenamingJobId(null); setRenameValue(''); }
+                              }}
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : (
+                            <span className="jdp-job-item__name">
+                              {dirtyJobIds.has(job.id) ? `*${job.metadata.name}` : job.metadata.name}
+                            </span>
+                          )}
+                          <span className={`jdp-job-item__status jdp-job-item__status--${job.metadata.status}`}>
+                            {job.metadata.status}
+                          </span>
+                        </div>
+                      ))}
+                      {folderJobs.length === 0 && (
+                        <div className="jdp-empty-hint">Empty folder</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {/* Loose jobs (not in any folder) */}
+            {jobs
+              .filter((job) => !folders.some((f) => f.jobIds.includes(job.id)))
+              .filter((job) => !jobSearchTerm.trim() || job.metadata.name.toLowerCase().includes(jobSearchTerm.toLowerCase()))
+              .map((job) => (
               <div
                 key={job.id}
                 className={`jdp-job-item ${activeJobId === job.id ? 'jdp-job-item--active' : ''}`}
@@ -284,7 +494,9 @@ export default function JobDesignerPanel() {
                     onClick={(e) => e.stopPropagation()}
                   />
                 ) : (
-                  <span className="jdp-job-item__name">{job.metadata.name}</span>
+                  <span className="jdp-job-item__name">
+                    {dirtyJobIds.has(job.id) ? `*${job.metadata.name}` : job.metadata.name}
+                  </span>
                 )}
                 <span className={`jdp-job-item__status jdp-job-item__status--${job.metadata.status}`}>
                   {job.metadata.status}
@@ -315,6 +527,54 @@ export default function JobDesignerPanel() {
             : null
           }
         />
+      )}
+
+      {/* Create Job Dialog */}
+      {createJobDialog !== null && (
+        <div className="dialog-overlay" onClick={cancelCreateJob}>
+          <div className="create-job-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="create-job-dialog__header">
+              <h3>Create New Job</h3>
+              <button className="create-job-dialog__close" onClick={cancelCreateJob}>
+                <X size={14} />
+              </button>
+            </div>
+            <div className="create-job-dialog__body">
+              <label className="create-job-dialog__label">
+                Job Name <span className="create-job-dialog__required">*</span>
+              </label>
+              <input
+                className="create-job-dialog__input"
+                type="text"
+                value={newJobName}
+                onChange={(e) => setNewJobName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') commitCreateJob(); if (e.key === 'Escape') cancelCreateJob(); }}
+                placeholder="Enter job name"
+                autoFocus
+              />
+              <label className="create-job-dialog__label">Description</label>
+              <textarea
+                className="create-job-dialog__textarea"
+                value={newJobDesc}
+                onChange={(e) => setNewJobDesc(e.target.value)}
+                placeholder="Enter job description (optional)"
+                rows={3}
+              />
+            </div>
+            <div className="create-job-dialog__footer">
+              <button className="create-job-dialog__btn create-job-dialog__btn--cancel" onClick={cancelCreateJob}>
+                Cancel
+              </button>
+              <button
+                className="create-job-dialog__btn create-job-dialog__btn--create"
+                onClick={commitCreateJob}
+                disabled={!newJobName.trim()}
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

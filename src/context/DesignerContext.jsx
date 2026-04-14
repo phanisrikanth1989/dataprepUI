@@ -30,7 +30,7 @@ function getInitialTheme() {
   return 'dark';
 }
 
-function createNewJob(name) {
+function createNewJob(name, description) {
   const now = new Date().toISOString().slice(0, 10);
   return {
     id: uuidv4().slice(0, 8),
@@ -40,7 +40,7 @@ function createNewJob(name) {
     selectedNodeId: null,
     metadata: {
       name: name || 'New_Job_1',
-      description: '',
+      description: description || '',
       author: '',
       version: '1.0.0',
       purpose: '',
@@ -54,11 +54,8 @@ function createNewJob(name) {
 
 export function DesignerProvider({ children }) {
   // Multi-job state
-  const [jobs, setJobs] = useState(() => {
-    const first = createNewJob('New_Job_1');
-    return [first];
-  });
-  const [activeJobId, setActiveJobId] = useState(() => jobs[0]?.id);
+  const [jobs, setJobs] = useState([]);
+  const [activeJobId, setActiveJobId] = useState(null);
 
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
@@ -122,7 +119,7 @@ export function DesignerProvider({ children }) {
   }, [jobs, activeJobId]);
 
   // Left sidebar active tab
-  const [leftTab, setLeftTab] = useState('palette');
+  const [leftTab, setLeftTab] = useState('designer');
 
   // Clipboard for cross-job copy
   const [clipboard, setClipboard] = useState(null);
@@ -132,6 +129,29 @@ export function DesignerProvider({ children }) {
 
   // ── Run Job (simulated) ──
   const [runningJobId, setRunningJobId] = useState(null);
+
+  // ── Dirty tracking (unsaved changes per job) ──
+  const [dirtyJobIds, setDirtyJobIds] = useState(new Set());
+
+  const markDirty = useCallback((jobId) => {
+    const id = jobId || activeJobId;
+    if (!id) return;
+    setDirtyJobIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, [activeJobId]);
+
+  const markClean = useCallback((jobId) => {
+    setDirtyJobIds((prev) => {
+      if (!prev.has(jobId)) return prev;
+      const next = new Set(prev);
+      next.delete(jobId);
+      return next;
+    });
+  }, []);
 
   const createMetadataItem = useCallback((category) => {
     const id = uuidv4().slice(0, 8);
@@ -201,7 +221,8 @@ export function DesignerProvider({ children }) {
         j.id === activeJobId ? (typeof updater === 'function' ? updater(j) : { ...j, ...updater }) : j
       )
     );
-  }, [activeJobId]);
+    markDirty(activeJobId);
+  }, [activeJobId, markDirty]);
 
   const undo = useCallback(() => {
     const stack = undoStackRef.current[activeJobId];
@@ -230,8 +251,8 @@ export function DesignerProvider({ children }) {
   }, [jobs, activeJobId, updateActiveJob]);
 
   // ── Job management ─────────────────────────────────
-  const createJob = useCallback((name) => {
-    const newJob = createNewJob(name);
+  const createJob = useCallback((name, description) => {
+    const newJob = createNewJob(name, description);
     setJobs((prev) => [...prev, newJob]);
     setActiveJobId(newJob.id);
     return newJob.id;
@@ -241,11 +262,8 @@ export function DesignerProvider({ children }) {
     setJobs((prev) => {
       const next = prev.filter((j) => j.id !== jobId);
       if (next.length === 0) {
-        const fallback = createNewJob('New_Job_1');
-        setActiveJobId(fallback.id);
-        return [fallback];
-      }
-      if (activeJobId === jobId) {
+        setActiveJobId(null);
+      } else if (activeJobId === jobId) {
         setActiveJobId(next[0].id);
       }
       return next;
@@ -318,7 +336,29 @@ export function DesignerProvider({ children }) {
       ...j,
       metadata: { ...j.metadata, status: 'saved', modified: new Date().toISOString().slice(0, 10) },
     }));
-  }, [jobs, activeJobId, updateActiveJob]);
+    markClean(activeJobId);
+  }, [jobs, activeJobId, updateActiveJob, markClean]);
+
+  // ── Auto-save every 30 seconds for dirty jobs ──
+  useEffect(() => {
+    if (dirtyJobIds.size === 0) return;
+    const timer = setInterval(() => {
+      setJobs((currentJobs) => {
+        try {
+          const saved = JSON.parse(localStorage.getItem('dataprep-saved-jobs') || '{}');
+          for (const job of currentJobs) {
+            if (dirtyJobIds.has(job.id)) {
+              saved[job.id] = JSON.parse(JSON.stringify(job));
+            }
+          }
+          localStorage.setItem('dataprep-saved-jobs', JSON.stringify(saved));
+        } catch { /* ignore */ }
+        return currentJobs;
+      });
+      setDirtyJobIds(new Set());
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [dirtyJobIds]);
 
   // ── Export Job as JSON download (Talend-style template) ──
   const exportJobAsJson = useCallback(() => {
@@ -1251,6 +1291,8 @@ export function DesignerProvider({ children }) {
     pauseJob,
     stopJob,
     runningJobId,
+    // Dirty tracking
+    dirtyJobIds,
     // ReactFlow setup
     reactFlowWrapper,
     reactFlowInstance,

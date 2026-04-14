@@ -33,6 +33,7 @@ import {
   Clipboard,
   Download,
   Upload,
+  Search,
 } from 'lucide-react';
 
 const SubjobGroupNode = memo(function SubjobGroupNode({ data }) {
@@ -89,6 +90,7 @@ const defaultEdgeOptions = {
 
 export default function DesignerCanvas() {
   const {
+    jobs,
     nodes,
     edges,
     onNodesChange,
@@ -98,6 +100,7 @@ export default function DesignerCanvas() {
     onPaneClick,
     reactFlowWrapper,
     setReactFlowInstance,
+    reactFlowInstance,
     onDragOver,
     onDrop,
     selectedNode,
@@ -119,6 +122,8 @@ export default function DesignerCanvas() {
     runningJobId,
     jobMetadata,
     addEdgeManual,
+    addComponentToCanvas,
+    registry,
     undo,
     redo,
   } = useDesigner();
@@ -130,9 +135,51 @@ export default function DesignerCanvas() {
   const justStartedConnecting = useRef(false);
   const importFileRef = useRef(null);
 
+  // ── Quick-add component (type-to-search on canvas) ──
+  const [quickSearch, setQuickSearch] = useState(null); // null or { term: string }
+  const [quickSelectedIdx, setQuickSelectedIdx] = useState(0);
+  const quickInputRef = useRef(null);
+
+  const quickResults = useMemo(() => {
+    if (!quickSearch || !quickSearch.term.trim()) return [];
+    const term = quickSearch.term.toLowerCase();
+    return Object.entries(registry)
+      .filter(([key, comp]) =>
+        comp.label.toLowerCase().includes(term) ||
+        key.toLowerCase().includes(term) ||
+        (comp.category || '').toLowerCase().includes(term)
+      )
+      .slice(0, 10);
+  }, [quickSearch, registry]);
+
+  const openQuickSearch = useCallback((initialChar) => {
+    if (!activeJobId || jobs.length === 0) return;
+    setQuickSearch({ term: initialChar || '' });
+    setQuickSelectedIdx(0);
+  }, [activeJobId, jobs.length]);
+
+  const closeQuickSearch = useCallback(() => {
+    setQuickSearch(null);
+    setQuickSelectedIdx(0);
+  }, []);
+
+  const addQuickComponent = useCallback((componentKey) => {
+    if (!reactFlowInstance) return;
+    const viewport = reactFlowInstance.getViewport();
+    const wrapper = reactFlowWrapper.current;
+    if (!wrapper) return;
+    const bounds = wrapper.getBoundingClientRect();
+    const centerX = (bounds.width / 2 - viewport.x) / viewport.zoom;
+    const centerY = (bounds.height / 2 - viewport.y) / viewport.zoom;
+    // Offset slightly based on existing node count to avoid stacking
+    const offset = (nodes.length % 5) * 40;
+    addComponentToCanvas(componentKey, { x: centerX + offset, y: centerY + offset });
+    closeQuickSearch();
+  }, [reactFlowInstance, reactFlowWrapper, nodes.length, addComponentToCanvas, closeQuickSearch]);
+
   const proOptions = useMemo(() => ({ hideAttribution: true }), []);
 
-  const isRunning = runningJobId === activeJobId;
+  const isRunning = runningJobId != null && runningJobId === activeJobId;
   const isPaused = jobMetadata.status === 'paused';
   const status = jobMetadata.status || 'draft';
 
@@ -216,7 +263,7 @@ export default function DesignerCanvas() {
   // ── Keyboard shortcuts (Ctrl+C / Ctrl+V / Ctrl+Z / Ctrl+Y) ────────────
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Skip if user is typing in an input/textarea
+      // Skip if user is typing in an input/textarea (except quick search)
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
@@ -236,10 +283,23 @@ export default function DesignerCanvas() {
         e.preventDefault();
         redo();
       }
+
+      // Open quick-add on regular letter/number key press (no modifier)
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key) && !quickSearch && activeJobId) {
+        e.preventDefault();
+        openQuickSearch(e.key);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, clipboard, activeJobId, copyNodeToClipboard, pasteFromClipboard, undo, redo]);
+  }, [selectedNodeId, clipboard, activeJobId, copyNodeToClipboard, pasteFromClipboard, undo, redo, quickSearch, openQuickSearch]);
+
+  // Auto-focus quick search input
+  useEffect(() => {
+    if (quickSearch && quickInputRef.current) {
+      quickInputRef.current.focus();
+    }
+  }, [quickSearch]);
 
   const toggleBottom = (tab) => {
     if (bottomOpen && bottomTab === tab) {
@@ -426,43 +486,116 @@ export default function DesignerCanvas() {
             style={{ background: '#1e293b', border: '1px solid #334155' }}
           />
           {/* Top-left toolbar (info, paste, delete) */}
-          <Panel position="top-left" className="canvas-toolbar">
-            <div className="toolbar-info">
-              <span>{nodes.length} components</span>
-              <span>{edges.length} connections</span>
-            </div>
-            {selectedNode && (
-              <button
-                className="toolbar-btn toolbar-btn--danger"
-                onClick={deleteSelectedNode}
-                title="Delete selected component"
-              >
-                Delete
-              </button>
-            )}
-          </Panel>
+          {jobs.length > 0 && (
+            <Panel position="top-left" className="canvas-toolbar">
+              <div className="toolbar-info">
+                <span>{nodes.length} components</span>
+                <span>{edges.length} connections</span>
+              </div>
+              {selectedNode && (
+                <button
+                  className="toolbar-btn toolbar-btn--danger"
+                  onClick={deleteSelectedNode}
+                  title="Delete selected component"
+                >
+                  Delete
+                </button>
+              )}
+            </Panel>
+          )}
 
           {/* Top-right: Save */}
-          <Panel position="top-right" className="canvas-toolbar">
-            <button className="toolbar-btn toolbar-btn--primary" onClick={saveJob} title="Save Job (Ctrl+S)">
-              <Save size={14} />
-              Save
-            </button>
-            <button className="toolbar-btn" onClick={exportJobAsJson} title="Export Job as JSON">
-              <Download size={14} />
-              Export JSON
-            </button>
+          {jobs.length > 0 && (
+            <Panel position="top-right" className="canvas-toolbar">
+              <button className="toolbar-btn toolbar-btn--primary" onClick={saveJob} title="Save Job (Ctrl+S)">
+                <Save size={14} />
+                Save
+              </button>
+              <button className="toolbar-btn" onClick={exportJobAsJson} title="Export Job as JSON">
+                <Download size={14} />
+                Export JSON
+              </button>
+            </Panel>
+          )}
 
-          </Panel>
-
-          {/* Empty state */}
-          {nodes.length === 0 && (
+          {/* Empty state - welcome */}
+          {jobs.length === 0 && (
+            <div className="canvas-welcome">
+              <div className="canvas-welcome__icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                  <rect width="24" height="24" rx="4" fill="#4a90d9" />
+                  <path d="M6 8h12M6 12h12M6 16h8" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </div>
+              <h2 className="canvas-welcome__title">Welcome to DataPrep Studio</h2>
+              <p className="canvas-welcome__subtitle">Design and orchestrate your data pipelines visually</p>
+              <div className="canvas-welcome__hint">
+                <span>Right-click on <strong>Job Designer</strong> panel to create a new job or folder</span>
+              </div>
+            </div>
+          )}
+          {/* Empty state - no components */}
+          {jobs.length > 0 && nodes.length === 0 && (
             <Panel position="top-center" className="canvas-empty">
               <div className="empty-message">
-                <h3>Drag components from the palette</h3>
-                <p>Drop them here to start building your data pipeline</p>
+                <h3>Start typing to search components</h3>
+                <p>Or drag them from the palette to build your data pipeline</p>
               </div>
             </Panel>
+          )}
+
+          {/* Quick-add component search */}
+          {quickSearch && (
+            <div className="quick-search-overlay">
+              <div className="quick-search">
+                <div className="quick-search__input-row">
+                  <Search size={14} className="quick-search__icon" />
+                  <input
+                    ref={quickInputRef}
+                    className="quick-search__input"
+                    type="text"
+                    value={quickSearch.term}
+                    onChange={(e) => {
+                      setQuickSearch({ term: e.target.value });
+                      setQuickSelectedIdx(0);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        closeQuickSearch();
+                      } else if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setQuickSelectedIdx((i) => Math.min(i + 1, quickResults.length - 1));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setQuickSelectedIdx((i) => Math.max(i - 1, 0));
+                      } else if (e.key === 'Enter' && quickResults.length > 0) {
+                        e.preventDefault();
+                        addQuickComponent(quickResults[quickSelectedIdx][0]);
+                      }
+                    }}
+                    placeholder="Type to search components..."
+                  />
+                </div>
+                {quickResults.length > 0 && (
+                  <div className="quick-search__results">
+                    {quickResults.map(([key, comp], idx) => (
+                      <div
+                        key={key}
+                        className={`quick-search__item ${idx === quickSelectedIdx ? 'quick-search__item--selected' : ''}`}
+                        onClick={() => addQuickComponent(key)}
+                        onMouseEnter={() => setQuickSelectedIdx(idx)}
+                      >
+                        <span className="quick-search__item-label">{comp.label}</span>
+                        <span className="quick-search__item-category">{comp.category}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {quickSearch.term.trim() && quickResults.length === 0 && (
+                  <div className="quick-search__empty">No components found</div>
+                )}
+              </div>
+            </div>
           )}
         </ReactFlow>
       </div>
@@ -523,15 +656,6 @@ export default function DesignerCanvas() {
                     Run
                   </button>
                   <button
-                    className="run-panel__btn run-panel__btn--pause"
-                    onClick={pauseJob}
-                    disabled={!isRunning || isPaused}
-                    title="Pause Job"
-                  >
-                    <Pause size={14} />
-                    Pause
-                  </button>
-                  <button
                     className="run-panel__btn run-panel__btn--stop"
                     onClick={stopJob}
                     disabled={!isRunning && !isPaused}
@@ -539,6 +663,17 @@ export default function DesignerCanvas() {
                   >
                     <Square size={14} />
                     Stop
+                  </button>
+                  <button
+                    className="run-panel__btn"
+                    onClick={() => {
+                      if (isRunning || isPaused) stopJob();
+                    }}
+                    disabled={status === 'draft'}
+                    title="Clear console"
+                  >
+                    <Trash2 size={14} />
+                    Clear
                   </button>
                   <div className="run-panel__separator" />
                   <div className="run-panel__info">
