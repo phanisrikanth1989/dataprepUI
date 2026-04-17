@@ -7549,7 +7549,7 @@
           {
             "key": "input_column",
             "label": "Input Column",
-            "type": "text"
+            "type": "schema_column"
           },
           {
             "key": "output_column",
@@ -7573,7 +7573,7 @@
           {
             "key": "input_column",
             "label": "Input Column",
-            "type": "text"
+            "type": "schema_column"
           },
           {
             "key": "function",
@@ -9080,7 +9080,7 @@
           {
             "key": "input_column",
             "label": "Column",
-            "type": "text"
+            "type": "schema_column"
           },
           {
             "key": "function",
@@ -9291,12 +9291,12 @@
           {
             "key": "input_column",
             "label": "Input Column",
-            "type": "text"
+            "type": "schema_column"
           },
           {
             "key": "lookup_column",
             "label": "Lookup Column",
-            "type": "text"
+            "type": "schema_column"
           }
         ]
       },
@@ -9399,7 +9399,7 @@
           {
             "key": "column",
             "label": "Column",
-            "type": "text"
+            "type": "schema_column"
           },
           {
             "key": "sort",
@@ -9728,7 +9728,7 @@
           {
             "key": "source_column",
             "label": "Source Column",
-            "type": "text"
+            "type": "schema_column"
           },
           {
             "key": "target_column",
@@ -9798,7 +9798,7 @@
       {
         "key": "pivot_column",
         "label": "Pivot Column",
-        "type": "text",
+        "type": "schema_column",
         "default": "",
         "group": "basic",
         "required": true
@@ -9806,7 +9806,7 @@
       {
         "key": "aggregation_column",
         "label": "Aggregation Column",
-        "type": "text",
+        "type": "schema_column",
         "default": "",
         "group": "basic"
       },
@@ -9857,7 +9857,7 @@
           {
             "key": "column",
             "label": "Column",
-            "type": "text"
+            "type": "schema_column"
           }
         ]
       },
@@ -10212,7 +10212,7 @@
       {
         "key": "normalize_column",
         "label": "Normalize Column",
-        "type": "text",
+        "type": "schema_column",
         "default": "",
         "group": "basic",
         "required": true
@@ -10353,7 +10353,7 @@
           {
             "key": "input_column",
             "label": "Input Column",
-            "type": "text"
+            "type": "schema_column"
           },
           {
             "key": "delimiter",
@@ -10450,7 +10450,7 @@
           {
             "key": "input_column",
             "label": "Input Column",
-            "type": "text"
+            "type": "schema_column"
           },
           {
             "key": "output_column",
@@ -10897,7 +10897,7 @@
       {
         "key": "field",
         "label": "Source Field",
-        "type": "text",
+        "type": "schema_column",
         "default": "",
         "group": "basic",
         "required": true
@@ -11803,15 +11803,15 @@
       {
         "key": "pivot_key",
         "label": "Pivot Key Column",
-        "type": "text",
-        "default": "pivot_key",
+        "type": "schema_column",
+        "default": "",
         "group": "basic"
       },
       {
         "key": "pivot_value",
         "label": "Pivot Value Column",
-        "type": "text",
-        "default": "pivot_value",
+        "type": "schema_column",
+        "default": "",
         "group": "basic"
       },
       {
@@ -11900,7 +11900,7 @@
           {
             "key": "input_column",
             "label": "Column",
-            "type": "text"
+            "type": "schema_column"
           },
           {
             "key": "search_pattern",

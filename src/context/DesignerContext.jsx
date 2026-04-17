@@ -38,6 +38,7 @@ function createNewJob(name, description) {
     edges: [],
     nodeProperties: {},
     selectedNodeId: null,
+    subjobNames: {},
     metadata: {
       name: name || 'New_Job_1',
       description: description || '',
@@ -208,6 +209,7 @@ export function DesignerProvider({ children }) {
   const edges = activeJob?.edges || [];
   const nodeProperties = activeJob?.nodeProperties || {};
   const selectedNodeId = activeJob?.selectedNodeId || null;
+  const subjobNames = activeJob?.subjobNames || {};
   const jobMetadata = activeJob?.metadata || {};
   const jobName = jobMetadata.name || '';
 
@@ -917,12 +919,46 @@ export function DesignerProvider({ children }) {
     }));
   }, [updateActiveJob]);
 
+  // Deselect sibling nodes when starting to drag a single node
+  // But preserve multi-selection if the dragged node is already selected
+  const onNodeDragStart = useCallback((_event, node) => {
+    updateActiveJob((j) => {
+      const draggedNode = j.nodes.find((n) => n.id === node.id);
+      if (draggedNode?.selected) return j;
+      return {
+        ...j,
+        nodes: j.nodes.map((n) =>
+          n.id === node.id ? { ...n, selected: true } : { ...n, selected: false }
+        ),
+      };
+    });
+  }, [updateActiveJob]);
+
+  // Move all nodes in a subjob by a delta (for subjob overlay dragging)
+  const moveSubjobNodes = useCallback((nodeIds, dx, dy) => {
+    updateActiveJob((j) => ({
+      ...j,
+      nodes: j.nodes.map((n) =>
+        nodeIds.includes(n.id)
+          ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
+          : n
+      ),
+    }));
+  }, [updateActiveJob]);
+
   const updateEdgeLabel = useCallback((edgeId, newLabel) => {
     updateActiveJob((j) => ({
       ...j,
       edges: j.edges.map((e) =>
         e.id === edgeId ? { ...e, label: newLabel } : e
       ),
+    }));
+  }, [updateActiveJob]);
+
+  const updateSubjobName = useCallback((subjobRootId, name) => {
+    updateActiveJob((j) => ({
+      ...j,
+      subjobNames: { ...j.subjobNames, [subjobRootId]: name },
     }));
   }, [updateActiveJob]);
 
@@ -1077,6 +1113,24 @@ export function DesignerProvider({ children }) {
       };
     });
   }, [updateActiveJob, selectedNodeId, takeSnapshot]);
+
+  // Delete an entire subjob (all its nodes & their edges)
+  const deleteSubjob = useCallback((nodeIds) => {
+    if (!nodeIds || nodeIds.length === 0) return;
+    takeSnapshot();
+    const idSet = new Set(nodeIds);
+    updateActiveJob((j) => {
+      const newProps = { ...j.nodeProperties };
+      for (const id of idSet) delete newProps[id];
+      return {
+        ...j,
+        nodes: j.nodes.filter((n) => !idSet.has(n.id)),
+        edges: j.edges.filter((e) => !idSet.has(e.source) && !idSet.has(e.target)),
+        nodeProperties: newProps,
+        selectedNodeId: idSet.has(j.selectedNodeId) ? null : j.selectedNodeId,
+      };
+    });
+  }, [updateActiveJob, takeSnapshot]);
 
   const onNodeClick = useCallback((_event, node) => {
     setSelectedNodeId(node.id);
@@ -1257,6 +1311,7 @@ export function DesignerProvider({ children }) {
     // Actions
     addComponentToCanvas,
     deleteSelectedNode,
+    deleteSubjob,
     // Job
     jobName,
     setJobName,
@@ -1271,6 +1326,13 @@ export function DesignerProvider({ children }) {
     // Connector linking (Talend-style)
     addEdgeManual,
     updateEdgeLabel,
+    // Subjob naming
+    subjobNames,
+    updateSubjobName,
+    // Node drag
+    onNodeDragStart,
+    // Subjob dragging
+    moveSubjobNodes,
     // Metadata repository (Talend-style)
     metadataRepo,
     createMetadataItem,

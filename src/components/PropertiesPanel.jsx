@@ -305,6 +305,7 @@ export default function PropertiesPanel() {
                   updateNodeProperty(selectedNodeId, prop.key, val)
                 }
                 schemaLinked={prop.key === 'trim_select' && schemaCount > 0}
+                inputSchema={inputSchema}
               />
             ))
           ) : (

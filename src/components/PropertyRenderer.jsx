@@ -3,8 +3,9 @@ import { Plus, Trash2 } from 'lucide-react';
 /**
  * Renders a single property field based on its type definition from the registry.
  */
-export default function PropertyRenderer({ property, value, onChange, schemaLinked }) {
+export default function PropertyRenderer({ property, value, onChange, schemaLinked, inputSchema }) {
   const { type, label, placeholder, tooltip, options, allowCustom, columns, min, max, fileTypes, language } = property;
+  const schemaColumnNames = (inputSchema || []).map((col) => col.name).filter(Boolean);
 
   switch (type) {
     case 'text':
@@ -128,6 +129,23 @@ export default function PropertyRenderer({ property, value, onChange, schemaLink
         </div>
       );
 
+    case 'schema_column':
+      return (
+        <div className="prop-field" title={tooltip}>
+          <label className="prop-label">{label}</label>
+          <select
+            className="prop-select"
+            value={value ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+          >
+            <option value="">-- Select Column --</option>
+            {schemaColumnNames.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        </div>
+      );
+
     case 'table':
       return (
         <div className="prop-field" title={tooltip}>
@@ -137,6 +155,7 @@ export default function PropertyRenderer({ property, value, onChange, schemaLink
             value={Array.isArray(value) ? value : []}
             onChange={onChange}
             schemaLinked={schemaLinked}
+            schemaColumnNames={schemaColumnNames}
           />
         </div>
       );
@@ -156,7 +175,7 @@ export default function PropertyRenderer({ property, value, onChange, schemaLink
   }
 }
 
-function TableEditor({ columns, value, onChange, schemaLinked }) {
+function TableEditor({ columns, value, onChange, schemaLinked, schemaColumnNames }) {
   const addRow = () => {
     const newRow = {};
     for (const col of columns) {
@@ -199,6 +218,19 @@ function TableEditor({ columns, value, onChange, schemaLinked }) {
                       updateCell(rowIdx, col.key, e.target.checked)
                     }
                   />
+                ) : col.type === 'schema_column' ? (
+                  <select
+                    className="prop-select prop-select--sm"
+                    value={row[col.key] ?? ''}
+                    onChange={(e) =>
+                      updateCell(rowIdx, col.key, e.target.value)
+                    }
+                  >
+                    <option value="">-- Select --</option>
+                    {(schemaColumnNames || []).map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
                 ) : col.type === 'select' ? (
                   <select
                     className="prop-select prop-select--sm"

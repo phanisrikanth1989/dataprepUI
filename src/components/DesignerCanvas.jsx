@@ -28,15 +28,75 @@ import {
   ArrowRight,
   Zap,
   Repeat,
-  Copy,
   Trash2,
-  Clipboard,
-  Download,
-  Upload,
   Search,
 } from 'lucide-react';
 
-const SubjobGroupNode = memo(function SubjobGroupNode({ data }) {
+const SubjobGroupNode = memo(function SubjobGroupNode({ data, onRename, onMoveSubjob, onSelect, isActive, zoom }) {
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(data.label);
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef(null);
+  const dragStart = useRef(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  useEffect(() => {
+    setEditValue(data.label);
+  }, [data.label]);
+
+  const commitRename = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== data.label) {
+      onRename(data.rootId, trimmed);
+    } else {
+      setEditValue(data.label);
+    }
+    setEditing(false);
+  };
+
+  // Subjob drag via mousedown/mousemove/mouseup on the header
+  const handleMouseDown = useCallback((e) => {
+    if (editing) return;
+    e.stopPropagation();
+    e.preventDefault();
+    onSelect(data.rootId);
+    setDragging(true);
+    dragStart.current = { x: e.clientX, y: e.clientY };
+
+    const handleMouseMove = (ev) => {
+      if (!dragStart.current) return;
+      const dx = (ev.clientX - dragStart.current.x) / zoom;
+      const dy = (ev.clientY - dragStart.current.y) / zoom;
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        onMoveSubjob(data.nodeIds, dx, dy);
+        dragStart.current = { x: ev.clientX, y: ev.clientY };
+      }
+    };
+
+    const handleMouseUp = () => {
+      setDragging(false);
+      dragStart.current = null;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [editing, zoom, data.nodeIds, onMoveSubjob]);
+
+  const borderColor = isActive || dragging
+    ? 'rgba(74, 144, 217, 0.85)'
+    : 'rgba(74, 144, 217, 0.4)';
+  const bgColor = isActive || dragging
+    ? 'rgba(74, 144, 217, 0.12)'
+    : 'rgba(74, 144, 217, 0.06)';
+
   return (
     <div
       style={{
@@ -46,34 +106,86 @@ const SubjobGroupNode = memo(function SubjobGroupNode({ data }) {
         width: data.width,
         height: data.height,
         borderRadius: 8,
-        border: '2px dashed rgba(74, 144, 217, 0.4)',
-        backgroundColor: 'rgba(74, 144, 217, 0.06)',
+        border: `2px ${isActive || dragging ? 'solid' : 'dashed'} ${borderColor}`,
+        backgroundColor: bgColor,
         pointerEvents: 'none',
+        transition: 'border-color 0.15s, background-color 0.15s',
       }}
     >
+      {/* Subjob header bar — draggable & double-click to rename */}
       <div
         style={{
-          fontSize: 10,
-          color: 'var(--text-secondary, #94a3b8)',
-          fontWeight: 600,
+          pointerEvents: 'auto',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
           padding: '2px 8px',
-          opacity: 0.7,
+          cursor: editing ? 'text' : dragging ? 'grabbing' : 'grab',
+          borderRadius: '6px 6px 0 0',
+          userSelect: 'none',
         }}
+        onMouseDown={handleMouseDown}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect(data.rootId);
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          setEditValue(data.label);
+          setEditing(true);
+        }}
+        title="Drag to move subjob · Double-click to rename"
       >
-        {data.label}
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={commitRename}
+            onMouseDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename();
+              if (e.key === 'Escape') { setEditValue(data.label); setEditing(false); }
+            }}
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              background: 'var(--bg-primary, #0f172a)',
+              color: 'var(--text-primary, #e2e8f0)',
+              border: '1px solid #4a90d9',
+              borderRadius: 3,
+              padding: '1px 4px',
+              outline: 'none',
+              width: Math.max(60, editValue.length * 7),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span style={{ fontSize: 10, color: isActive || dragging ? '#4a90d9' : 'var(--text-secondary, #94a3b8)', fontWeight: 600 }}>
+            {data.label}
+          </span>
+        )}
       </div>
     </div>
   );
 });
 
-function SubjobOverlay({ groups }) {
+function SubjobOverlay({ groups, onRename, onMoveSubjob, activeSubjobId, onSelectSubjob }) {
   const { x, y, zoom } = useViewport();
   if (groups.length === 0) return null;
   return (
-    <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 }}>
+    <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 5 }}>
       <div style={{ transform: `translate(${x}px, ${y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
         {groups.map((g) => (
-          <SubjobGroupNode key={g.id} data={g} />
+          <SubjobGroupNode
+            key={g.id}
+            data={g}
+            onRename={onRename}
+            onMoveSubjob={onMoveSubjob}
+            onSelect={onSelectSubjob}
+            isActive={activeSubjobId === g.rootId}
+            zoom={zoom}
+          />
         ))}
       </div>
     </div>
@@ -106,6 +218,7 @@ export default function DesignerCanvas() {
     selectedNode,
     selectedNodeId,
     deleteSelectedNode,
+    deleteSubjob,
     theme,
     clipboard,
     copyNodeToClipboard,
@@ -126,12 +239,17 @@ export default function DesignerCanvas() {
     registry,
     undo,
     redo,
+    subjobNames,
+    updateSubjobName,
+    onNodeDragStart,
+    moveSubjobNodes,
   } = useDesigner();
 
   const [bottomTab, setBottomTab] = useState('run');
   const [bottomOpen, setBottomOpen] = useState(false);
   const [nodeContextMenu, setNodeContextMenu] = useState(null);
   const [connectingFrom, setConnectingFrom] = useState(null);
+  const [activeSubjobId, setActiveSubjobId] = useState(null); // root id of selected subjob
   const justStartedConnecting = useRef(false);
   const importFileRef = useRef(null);
 
@@ -250,17 +368,24 @@ export default function DesignerCanvas() {
         const maxY = Math.max(...g.map((n) => n.position.y + (n.height || NODE_H)));
         return {
           id: `subjob_${root}`,
+          rootId: root,
           x: minX - PAD,
           y: minY - PAD - HDR,
           width: maxX - minX + PAD * 2,
           height: maxY - minY + PAD * 2 + HDR,
-          label: `Subjob ${idx + 1}`,
+          label: subjobNames[root] || `Subjob ${idx + 1}`,
           nodeIds: g.map((n) => n.id),
         };
       });
-  }, [nodes, edges]);
+  }, [nodes, edges, subjobNames]);
 
-  // ── Keyboard shortcuts (Ctrl+C / Ctrl+V / Ctrl+Z / Ctrl+Y) ────────────
+  // ── Active subjob helper ──
+  const activeSubjobGroup = useMemo(() => {
+    if (!activeSubjobId) return null;
+    return subjobGroups.find((g) => g.rootId === activeSubjobId) || null;
+  }, [activeSubjobId, subjobGroups]);
+
+  // ── Keyboard shortcuts (Ctrl+C / Ctrl+V / Ctrl+Z / Ctrl+Y / Delete) ────────────
   useEffect(() => {
     const handleKeyDown = (e) => {
       // Skip if user is typing in an input/textarea (except quick search)
@@ -271,9 +396,13 @@ export default function DesignerCanvas() {
         e.preventDefault();
         saveJob();
       }
-      if (e.ctrlKey && e.key === 'c' && selectedNodeId) {
+      if (e.ctrlKey && e.key === 'c') {
         e.preventDefault();
-        copyNodeToClipboard(selectedNodeId);
+        if (activeSubjobGroup) {
+          copySubjobToClipboard(activeSubjobGroup.nodeIds);
+        } else if (selectedNodeId) {
+          copyNodeToClipboard(selectedNodeId);
+        }
       }
       if (e.ctrlKey && e.key === 'v' && clipboard) {
         e.preventDefault();
@@ -287,6 +416,13 @@ export default function DesignerCanvas() {
         e.preventDefault();
         redo();
       }
+      if (e.key === 'Delete') {
+        if (activeSubjobGroup) {
+          e.preventDefault();
+          deleteSubjob(activeSubjobGroup.nodeIds);
+          setActiveSubjobId(null);
+        }
+      }
 
       // Open quick-add on regular letter/number key press (no modifier)
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key) && !quickSearch && activeJobId) {
@@ -296,7 +432,7 @@ export default function DesignerCanvas() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, clipboard, activeJobId, copyNodeToClipboard, pasteFromClipboard, undo, redo, quickSearch, openQuickSearch, saveJob]);
+  }, [selectedNodeId, clipboard, activeJobId, copyNodeToClipboard, copySubjobToClipboard, pasteFromClipboard, undo, redo, quickSearch, openQuickSearch, saveJob, activeSubjobGroup, deleteSubjob]);
 
   // Auto-focus quick search input
   useEffect(() => {
@@ -356,6 +492,7 @@ export default function DesignerCanvas() {
       setConnectingFrom(null);
       return;
     }
+    setActiveSubjobId(null);
     onNodeClick(e, node);
   }, [connectingFrom, addEdgeManual, onNodeClick]);
 
@@ -366,6 +503,7 @@ export default function DesignerCanvas() {
       cancelConnecting();
       return;
     }
+    setActiveSubjobId(null);
     onPaneClick(e);
     setNodeContextMenu(null);
   }, [connectingFrom, cancelConnecting, onPaneClick]);
@@ -379,71 +517,39 @@ export default function DesignerCanvas() {
     const triggers = connectors.triggers?.outgoing || [];
     const items = [];
 
-    // Row / Iterate outputs
+    // Row / Iterate outputs as submenu
     if (outputs.length > 0) {
-      items.push({ separator: true, label: 'Row' });
-      for (const out of outputs) {
-        const cat = out.type === 'iterate' ? 'iterate' : 'row';
-        items.push({
-          label: out.label,
-          icon: cat === 'iterate'
-            ? <Repeat size={12} style={{ color: '#1abc9c' }} />
-            : <ArrowRight size={12} style={{ color: '#4a90d9' }} />,
-          onClick: () => startConnecting(node.id, out.name, out.type, out.label, cat),
-        });
-      }
+      items.push({
+        label: 'Row',
+        icon: <ArrowRight size={12} style={{ color: '#4a90d9' }} />,
+        children: outputs.map((out) => {
+          const cat = out.type === 'iterate' ? 'iterate' : 'row';
+          return {
+            label: out.label,
+            icon: cat === 'iterate'
+              ? <Repeat size={12} style={{ color: '#1abc9c' }} />
+              : <ArrowRight size={12} style={{ color: '#4a90d9' }} />,
+            onClick: () => startConnecting(node.id, out.name, out.type, out.label, cat),
+          };
+        }),
+      });
     }
 
-    // Trigger outputs
+    // Trigger outputs as submenu
     if (triggers.length > 0) {
-      items.push({ separator: true, label: 'Trigger' });
-      for (const trig of triggers) {
-        items.push({
+      items.push({
+        label: 'Trigger',
+        icon: <Zap size={12} style={{ color: '#e74c3c' }} />,
+        children: triggers.map((trig) => ({
           label: trig,
           icon: TRIGGER_ICONS[trig] || <Zap size={12} />,
           onClick: () => startConnecting(node.id, trig, 'trigger', trig, 'trigger'),
-        });
-      }
-    }
-
-    // Standard actions
-    items.push({ separator: true });
-    items.push({
-      label: 'Copy Component',
-      icon: <Copy size={12} />,
-      onClick: () => copyNodeToClipboard(node.id),
-    });
-
-    // Check if node belongs to a subjob — offer Copy Subjob
-    const nodeSubjob = subjobGroups.find((sg) => sg.nodeIds.includes(node.id));
-    if (nodeSubjob) {
-      items.push({
-        label: 'Copy Subjob',
-        icon: <Copy size={12} />,
-        onClick: () => copySubjobToClipboard(nodeSubjob.nodeIds),
+        })),
       });
     }
-
-    if (clipboard) {
-      items.push({
-        label: clipboard.type === 'subjob' ? 'Paste Subjob' : 'Paste Component',
-        icon: <Clipboard size={12} />,
-        onClick: () => pasteFromClipboard(activeJobId),
-      });
-    }
-    items.push({ separator: true });
-    items.push({
-      label: 'Delete Component',
-      icon: <Trash2 size={12} />,
-      danger: true,
-      onClick: () => {
-        onNodeClick(null, node);
-        setTimeout(() => deleteSelectedNode(), 0);
-      },
-    });
 
     return items;
-  }, [nodeContextMenu, startConnecting, copyNodeToClipboard, copySubjobToClipboard, subjobGroups, clipboard, pasteFromClipboard, activeJobId, deleteSelectedNode, onNodeClick]);
+  }, [nodeContextMenu, startConnecting]);
 
   return (
     <div className={`designer-canvas-wrapper ${connectingFrom ? 'designer-canvas-wrapper--connecting' : ''}`}>
@@ -469,6 +575,7 @@ export default function DesignerCanvas() {
           onPaneClick={handlePaneClick}
           onNodeContextMenu={handleNodeContextMenu}
           onEdgeDoubleClick={handleEdgeDoubleClick}
+          onNodeDragStart={onNodeDragStart}
           onInit={setReactFlowInstance}
           onDragOver={onDragOver}
           onDrop={onDrop}
@@ -484,7 +591,13 @@ export default function DesignerCanvas() {
           multiSelectionKeyCode="Control"
         >
           <Background variant="dots" gap={15} size={1} color={theme === 'dark' ? '#334155' : '#cbd5e1'} />
-          <SubjobOverlay groups={subjobGroups} />
+          <SubjobOverlay
+            groups={subjobGroups}
+            onRename={updateSubjobName}
+            onMoveSubjob={moveSubjobNodes}
+            activeSubjobId={activeSubjobId}
+            onSelectSubjob={setActiveSubjobId}
+          />
           <Controls
             position="bottom-right"
             style={{ background: '#1e293b', border: '1px solid #334155' }}
