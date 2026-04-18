@@ -289,9 +289,10 @@ export default function DesignerCanvas() {
     const bounds = wrapper.getBoundingClientRect();
     const centerX = (bounds.width / 2 - viewport.x) / viewport.zoom;
     const centerY = (bounds.height / 2 - viewport.y) / viewport.zoom;
-    // Offset slightly based on existing node count to avoid stacking
-    const offset = (nodes.length % 5) * 40;
-    addComponentToCanvas(componentKey, { x: centerX + offset, y: centerY + offset });
+    // Offset horizontally based on existing node count to avoid overlapping
+    const col = nodes.length % 5;
+    const row = Math.floor((nodes.length % 25) / 5);
+    addComponentToCanvas(componentKey, { x: centerX + col * 250, y: centerY + row * 120 });
     closeQuickSearch();
   }, [reactFlowInstance, reactFlowWrapper, nodes.length, addComponentToCanvas, closeQuickSearch]);
 

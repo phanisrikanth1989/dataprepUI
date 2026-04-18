@@ -920,11 +920,12 @@ export function DesignerProvider({ children }) {
   }, [updateActiveJob]);
 
   // Deselect sibling nodes when starting to drag a single node
-  // But preserve multi-selection if the dragged node is already selected
-  const onNodeDragStart = useCallback((_event, node) => {
+  // Preserve multi-selection only when Ctrl/Shift/Meta is held
+  const onNodeDragStart = useCallback((event, node) => {
     updateActiveJob((j) => {
+      const multiKey = event.shiftKey || event.ctrlKey || event.metaKey;
       const draggedNode = j.nodes.find((n) => n.id === node.id);
-      if (draggedNode?.selected) return j;
+      if (multiKey && draggedNode?.selected) return j;
       return {
         ...j,
         nodes: j.nodes.map((n) =>
