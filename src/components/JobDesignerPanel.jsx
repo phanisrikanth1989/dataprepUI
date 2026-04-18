@@ -18,6 +18,7 @@ import {
   Download,
   Search,
   FileText,
+  Package,
 } from 'lucide-react';
 import { useDesigner } from '../context/DesignerContext';
 import ContextMenu from './ContextMenu';
@@ -43,6 +44,7 @@ export default function JobDesignerPanel() {
     pasteFromClipboard,
     importJobFromJson,
     exportJobAsJson,
+    exportJobAsPackage,
     getExportJsonString,
     jobMetadata,
     dirtyJobIds,
@@ -301,6 +303,14 @@ export default function JobDesignerPanel() {
               registry,
               canvasElement: contextMenu.jobId === activeJobId ? canvasEl : null,
             });
+          },
+        },
+        {
+          label: 'Export as Package',
+          icon: <Package size={12} />,
+          onClick: () => {
+            setActiveJobId(contextMenu.jobId);
+            setTimeout(() => exportJobAsPackage(), 0);
           },
         },
         {

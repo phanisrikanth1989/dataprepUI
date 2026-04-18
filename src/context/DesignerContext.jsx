@@ -2,6 +2,7 @@ import { createContext, useContext, useCallback, useState, useRef, useEffect } f
 import { addEdge, applyNodeChanges, applyEdgeChanges } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 import registry from '../data/ui_registry.json';
+import { createJobPackage } from '../services/exportPackage';
 
 const DesignerContext = createContext(null);
 
@@ -838,6 +839,45 @@ export function DesignerProvider({ children }) {
     }, null, 2);
   }, [jobs, activeJobId]);
 
+  // ── Export Job as Package (ZIP with JSON + Python + config) ──
+  const exportJobAsPackage = useCallback(async () => {
+    const jsonStr = getExportJsonString();
+    if (!jsonStr) return;
+    const jobDef = JSON.parse(jsonStr);
+    const jobName = (jobDef.job_name || 'etl_job').replace(/\s+/g, '_');
+    const defaultName = `${jobName}.zip`;
+
+    try {
+      const blob = await createJobPackage(jsonStr);
+
+      if (typeof window.showSaveFilePicker === 'function') {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: defaultName,
+            types: [{ description: 'ZIP Archive', accept: { 'application/zip': ['.zip'] } }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          return;
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+        }
+      }
+      // Fallback download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = defaultName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Package export failed:', err);
+    }
+  }, [getExportJsonString]);
+
   // ── Run Job (simulated) ──
   const runJob = useCallback(() => {
     if (runningJobId) return;
@@ -1365,6 +1405,7 @@ export function DesignerProvider({ children }) {
     // Job actions
     saveJob,
     exportJobAsJson,
+    exportJobAsPackage,
     importJobFromJson,
     getExportJsonString,
     runJob,
