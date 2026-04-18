@@ -22,6 +22,11 @@ export default function PropertiesPanel() {
   const [schemaOpen, setSchemaOpen] = useState(false);
   const [mapEditorOpen, setMapEditorOpen] = useState(false);
 
+  // Reset to Basic Settings tab whenever the selected component changes
+  useEffect(() => {
+    setActiveTab('basic');
+  }, [selectedNodeId]);
+
   const componentDef = useMemo(() => {
     if (!selectedNode) return null;
     return registry[selectedNode.data.componentType] || null;
