@@ -286,7 +286,23 @@ export async function exportJobAsPdf({ job, registry, canvasElement }) {
     );
   }
 
-  // Save
+  // Save — prompt user for save location
   const fileName = `${(metadata.name || 'Job').replace(/\s+/g, '_')}_Report.pdf`;
+
+  if (typeof window.showSaveFilePicker === 'function') {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: fileName,
+        types: [{ description: 'PDF Files', accept: { 'application/pdf': ['.pdf'] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(doc.output('blob'));
+      await writable.close();
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return; // user cancelled
+    }
+  }
+  // Fallback for browsers without File System Access API
   doc.save(fileName);
 }

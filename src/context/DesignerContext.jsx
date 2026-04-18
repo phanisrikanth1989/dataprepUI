@@ -363,7 +363,7 @@ export function DesignerProvider({ children }) {
   }, [dirtyJobIds]);
 
   // ── Export Job as JSON download (Talend-style template) ──
-  const exportJobAsJson = useCallback(() => {
+  const exportJobAsJson = useCallback(async () => {
     const job = jobs.find((j) => j.id === activeJobId);
     if (!job) return;
 
@@ -506,10 +506,27 @@ export function DesignerProvider({ children }) {
 
     const json = JSON.stringify(output, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
+    const defaultName = `${jobName}_${jobVersion}.json`;
+
+    if (typeof window.showSaveFilePicker === 'function') {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: defaultName,
+          types: [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return; // user cancelled
+      }
+    }
+    // Fallback for browsers without File System Access API
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${jobName}_${jobVersion}.json`;
+    a.download = defaultName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
