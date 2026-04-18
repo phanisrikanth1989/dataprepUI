@@ -2619,6 +2619,21 @@ body {
   border-bottom-color: var(--accent);
 }
 
+.modal-tab__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  padding: 0 4px;
+  margin-left: 5px;
+}
+
 /* Modal body */
 .modal-body {
   flex: 1;
