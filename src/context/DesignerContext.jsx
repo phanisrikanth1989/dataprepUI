@@ -3,6 +3,7 @@ import { addEdge, applyNodeChanges, applyEdgeChanges } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 import registry from '../data/ui_registry.json';
 import { createJobPackage } from '../services/exportPackage';
+import { runJobOnEngine, stopJobOnEngine } from '../services/engineService';
 
 const DesignerContext = createContext(null);
 
@@ -129,8 +130,11 @@ export function DesignerProvider({ children }) {
   // ── Metadata Repository (Talend-style connections/schemas) ──
   const [metadataRepo, setMetadataRepo] = useState([]);
 
-  // ── Run Job (simulated) ──
+  // ── Run Job (real engine execution) ──
   const [runningJobId, setRunningJobId] = useState(null);
+  const runHandleRef = useRef(null); // { abort(), runId }
+  const [jobLogs, setJobLogs] = useState({}); // { [jobId]: [ {type, message, timestamp, component} ] }
+  const [runSummary, setRunSummary] = useState({}); // { [jobId]: { status, startTime, endTime, duration, rowsProcessed } }
 
   // ── Dirty tracking (unsaved changes per job) ──
   const [dirtyJobIds, setDirtyJobIds] = useState(new Set());
@@ -392,12 +396,20 @@ export function DesignerProvider({ children }) {
       }
     }
 
+    // ── Map UI type names to engine type names
+    const mapTypeToEngine = (uiType) => {
+      const TYPE_MAP = { String: 'str', Integer: 'int', Long: 'long', Float: 'float', Double: 'double', Boolean: 'bool', Date: 'datetime', 'byte[]': 'bytes', BigDecimal: 'decimal', Character: 'char', Short: 'short', Object: 'object' };
+      return TYPE_MAP[uiType] || (uiType || 'str').toLowerCase();
+    };
+
     // ── Format schema columns to template style
     const fmtCols = (cols) =>
       (cols || []).map((c) => {
-        const col = { name: c.name, type: c.type || 'String', nullable: c.nullable !== false, key: !!c.key };
+        const col = { name: c.name, type: mapTypeToEngine(c.type || 'String'), nullable: c.nullable !== false, key: !!c.key };
         if (c.length != null && c.length !== '') col.length = Number(c.length);
         if (c.precision != null && c.precision !== '') col.precision = Number(c.precision);
+        if (c.date_pattern) col.date_pattern = c.date_pattern;
+        if (c.pattern) col.date_pattern = c.pattern;
         return col;
       });
 
@@ -451,10 +463,9 @@ export function DesignerProvider({ children }) {
     const triggers = jEdges
       .filter((e) => e.data?.category === 'trigger')
       .map((e) => ({
-        name: e.data?.connectorName || e.label,
+        type: e.data?.connectorName || e.label || 'OnSubjobOk',
         from: idMap[e.source] || e.source,
         to: idMap[e.target] || e.target,
-        type: 'trigger',
       }));
 
     // ── Compute subjobs (union-find on non-trigger edges)
@@ -483,11 +494,13 @@ export function DesignerProvider({ children }) {
       }
     }
 
-    // ── Context variables
+    // ── Context variables (engine expects { value, type } objects)
     const ctx = {};
     if (Array.isArray(ctxVars) && ctxVars.length > 0) {
       const vars = {};
-      for (const v of ctxVars) vars[v.name] = v.value ?? '';
+      for (const v of ctxVars) {
+        vars[v.name] = { value: v.value ?? '', type: mapTypeToEngine(v.type || 'String') };
+      }
       ctx['Default'] = vars;
     } else {
       ctx['Default'] = {};
@@ -620,15 +633,19 @@ export function DesignerProvider({ children }) {
       }
 
       if (comp.schema?.output && comp.schema.output.length > 0) {
-        props.__schema = comp.schema.output.map((c) => ({
-          name: c.name,
-          type: c.type || 'String',
-          length: c.length != null ? String(c.length) : '',
-          precision: c.precision != null ? String(c.precision) : '',
-          nullable: c.nullable !== false,
-          key: !!c.key,
-          comment: c.comment || '',
-        }));
+        props.__schema = comp.schema.output.map((c) => {
+          const col = {
+            name: c.name,
+            type: c.type || 'String',
+            length: c.length != null ? String(c.length) : '',
+            precision: c.precision != null ? String(c.precision) : '',
+            nullable: c.nullable !== false,
+            key: !!c.key,
+            comment: c.comment || '',
+          };
+          if (c.date_pattern) col.date_pattern = c.date_pattern;
+          return col;
+        });
       }
       newProps[internalId] = props;
     }
@@ -637,9 +654,15 @@ export function DesignerProvider({ children }) {
     const EDGE_STYLES = {
       row: { stroke: '#4a90d9', strokeWidth: 2 },
       iterate: { stroke: '#1abc9c', strokeWidth: 2, strokeDasharray: '6 3' },
-      trigger: { stroke: '#e74c3c', strokeWidth: 2, strokeDasharray: '5 5' },
+      trigger: { stroke: '#27ae60', strokeWidth: 2, strokeDasharray: '5 5' },
+      trigger_error: { stroke: '#e74c3c', strokeWidth: 2, strokeDasharray: '5 5' },
     };
-    const EDGE_COLORS = { row: '#4a90d9', iterate: '#1abc9c', trigger: '#e74c3c' };
+    const EDGE_COLORS = { row: '#4a90d9', iterate: '#1abc9c', trigger: '#27ae60', trigger_error: '#e74c3c' };
+
+    const getTriggerStyle = (name) => {
+      const isError = /error/i.test(name);
+      return { style: isError ? EDGE_STYLES.trigger_error : EDGE_STYLES.trigger, color: isError ? EDGE_COLORS.trigger_error : EDGE_COLORS.trigger };
+    };
 
     const newEdges = [];
 
@@ -691,7 +714,8 @@ export function DesignerProvider({ children }) {
     for (const trig of (data.triggers || [])) {
       const sourceId = idMap[trig.from] || trig.from;
       const targetId = idMap[trig.to] || trig.to;
-      const color = EDGE_COLORS.trigger;
+      const trigName = trig.type && trig.type !== 'trigger' ? trig.type : (trig.name || 'OnSubjobOk');
+      const ts = getTriggerStyle(trigName);
       newEdges.push({
         id: `e_${uuidv4().slice(0, 8)}`,
         source: sourceId,
@@ -699,21 +723,28 @@ export function DesignerProvider({ children }) {
         sourceHandle: 'trigger-out',
         targetHandle: 'trigger-in',
         type: 'smoothstep',
-        animated: true,
-        label: trig.name,
-        labelStyle: { fontSize: 10, fontWeight: 600, fill: color },
+        animated: false,
+        label: trigName,
+        labelStyle: { fontSize: 10, fontWeight: 600, fill: ts.color },
         labelBgStyle: { fill: 'var(--bg-secondary)', fillOpacity: 0.9 },
-        style: EDGE_STYLES.trigger,
-        markerEnd: { type: 'arrowclosed', color },
-        data: { connectorName: trig.name, connectorType: 'trigger', category: 'trigger' },
+        style: ts.style,
+        markerEnd: { type: 'arrowclosed', color: ts.color },
+        data: { connectorName: trigName, connectorType: 'trigger', category: 'trigger' },
       });
     }
 
     // Context variables
+    const ENGINE_TO_UI_TYPE = { str: 'String', int: 'Integer', long: 'Long', float: 'Float', double: 'Double', bool: 'Boolean', datetime: 'Date', bytes: 'byte[]', decimal: 'BigDecimal', char: 'Character', short: 'Short', object: 'Object' };
     const ctxVars = [];
     const ctxGroup = data.context?.[data.default_context || 'Default'] || data.context?.Default || {};
-    for (const [name, value] of Object.entries(ctxGroup)) {
-      ctxVars.push({ name, type: 'String', value: String(value), comment: '' });
+    for (const [name, raw] of Object.entries(ctxGroup)) {
+      if (raw && typeof raw === 'object' && 'value' in raw) {
+        // Engine format: { value: '...', type: 'str' }
+        ctxVars.push({ name, type: ENGINE_TO_UI_TYPE[raw.type] || 'String', value: String(raw.value ?? ''), comment: '' });
+      } else {
+        // Plain string format (legacy)
+        ctxVars.push({ name, type: 'String', value: String(raw ?? ''), comment: '' });
+      }
     }
 
     const newJob = {
@@ -768,11 +799,18 @@ export function DesignerProvider({ children }) {
       }
     }
 
+    const mapTypeToEngine = (uiType) => {
+      const TYPE_MAP = { String: 'str', Integer: 'int', Long: 'long', Float: 'float', Double: 'double', Boolean: 'bool', Date: 'datetime', 'byte[]': 'bytes', BigDecimal: 'decimal', Character: 'char', Short: 'short', Object: 'object' };
+      return TYPE_MAP[uiType] || (uiType || 'str').toLowerCase();
+    };
+
     const fmtCols = (cols) =>
       (cols || []).map((c) => {
-        const col = { name: c.name, type: c.type || 'String', nullable: c.nullable !== false, key: !!c.key };
+        const col = { name: c.name, type: mapTypeToEngine(c.type || 'String'), nullable: c.nullable !== false, key: !!c.key };
         if (c.length != null && c.length !== '') col.length = Number(c.length);
         if (c.precision != null && c.precision !== '') col.precision = Number(c.precision);
+        if (c.date_pattern) col.date_pattern = c.date_pattern;
+        if (c.pattern) col.date_pattern = c.pattern;
         return col;
       });
 
@@ -807,10 +845,9 @@ export function DesignerProvider({ children }) {
     }));
 
     const triggers = jEdges.filter((e) => e.data?.category === 'trigger').map((e) => ({
-      name: e.data?.connectorName || e.label,
+      type: e.data?.connectorName || e.label || 'OnSubjobOk',
       from: idMap[e.source] || e.source,
       to: idMap[e.target] || e.target,
-      type: 'trigger',
     }));
 
     const parent = {};
@@ -826,7 +863,9 @@ export function DesignerProvider({ children }) {
     const ctx = {};
     if (Array.isArray(ctxVars) && ctxVars.length > 0) {
       const vars = {};
-      for (const v of ctxVars) vars[v.name] = v.value ?? '';
+      for (const v of ctxVars) {
+        vars[v.name] = { value: v.value ?? '', type: mapTypeToEngine(v.type || 'String') };
+      }
       ctx['Default'] = vars;
     } else { ctx['Default'] = {}; }
 
@@ -879,24 +918,75 @@ export function DesignerProvider({ children }) {
   }, [getExportJsonString]);
 
   // ── Run Job (simulated) ──
+  // ── Helper: append a log entry for a job ──
+  const appendLog = useCallback((jobId, log) => {
+    setJobLogs((prev) => ({
+      ...prev,
+      [jobId]: [...(prev[jobId] || []), log],
+    }));
+  }, []);
+
+  const clearLogs = useCallback((jobId) => {
+    const id = jobId || activeJobId;
+    setJobLogs((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setRunSummary((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, [activeJobId]);
+
   const runJob = useCallback(() => {
     if (runningJobId) return;
-    setRunningJobId(activeJobId);
+
+    const jobId = activeJobId;
+    const jsonStr = getExportJsonString();
+    if (!jsonStr) {
+      appendLog(jobId, { type: 'error', message: 'Cannot run: no job data to export.', timestamp: new Date().toISOString() });
+      return;
+    }
+
+    // Clear previous logs for a fresh run
+    setJobLogs((prev) => ({ ...prev, [jobId]: [] }));
+    setRunSummary((prev) => { const next = { ...prev }; delete next[jobId]; return next; });
+
+    setRunningJobId(jobId);
     updateActiveJob((j) => ({
       ...j,
       metadata: { ...j.metadata, status: 'running', modified: new Date().toISOString().slice(0, 10) },
     }));
-    setTimeout(() => {
-      setRunningJobId(null);
-      setJobs((prev) =>
-        prev.map((j) =>
-          j.id === activeJobId
-            ? { ...j, metadata: { ...j.metadata, status: 'completed', modified: new Date().toISOString().slice(0, 10) } }
-            : j
-        )
-      );
-    }, 5000);
-  }, [activeJobId, runningJobId, updateActiveJob]);
+
+    const handle = runJobOnEngine(jsonStr, {
+      onLog: (log) => {
+        appendLog(jobId, log);
+      },
+      onStatusChange: (newStatus) => {
+        // Map engine statuses to our job metadata statuses
+        const mappedStatus = newStatus === 'failed' ? 'failed' : newStatus;
+        setJobs((prev) =>
+          prev.map((j) =>
+            j.id === jobId
+              ? { ...j, metadata: { ...j.metadata, status: mappedStatus, modified: new Date().toISOString().slice(0, 10) } }
+              : j
+          )
+        );
+      },
+      onError: (errorMsg) => {
+        appendLog(jobId, { type: 'error', message: `Engine error: ${errorMsg}`, timestamp: new Date().toISOString() });
+      },
+      onComplete: (summary) => {
+        setRunSummary((prev) => ({ ...prev, [jobId]: summary }));
+        setRunningJobId((current) => (current === jobId ? null : current));
+        runHandleRef.current = null;
+      },
+    });
+
+    runHandleRef.current = handle;
+  }, [activeJobId, runningJobId, updateActiveJob, getExportJsonString, appendLog]);
 
   const pauseJob = useCallback(() => {
     if (runningJobId !== activeJobId) return;
@@ -908,6 +998,14 @@ export function DesignerProvider({ children }) {
 
   const stopJob = useCallback(() => {
     if (!runningJobId) return;
+    // Abort the fetch stream
+    if (runHandleRef.current) {
+      const { runId } = runHandleRef.current;
+      runHandleRef.current.abort();
+      runHandleRef.current = null;
+      // Also send a stop signal to the backend
+      stopJobOnEngine(runId);
+    }
     setRunningJobId(null);
     updateActiveJob((j) => ({
       ...j,
@@ -1096,15 +1194,18 @@ export function DesignerProvider({ children }) {
     const EDGE_STYLES = {
       row: { stroke: '#4a90d9', strokeWidth: 2 },
       iterate: { stroke: '#1abc9c', strokeWidth: 2, strokeDasharray: '6 3' },
-      trigger: { stroke: '#e74c3c', strokeWidth: 2, strokeDasharray: '5 5' },
+      trigger: { stroke: '#27ae60', strokeWidth: 2, strokeDasharray: '5 5' },
+      trigger_error: { stroke: '#e74c3c', strokeWidth: 2, strokeDasharray: '5 5' },
     };
-    const EDGE_COLORS = { row: '#4a90d9', iterate: '#1abc9c', trigger: '#e74c3c' };
+    const EDGE_COLORS = { row: '#4a90d9', iterate: '#1abc9c', trigger: '#27ae60', trigger_error: '#e74c3c' };
 
     const cat = category;
     const sourceHandle = cat === 'trigger' ? 'trigger-out' : `out-${connectorName}`;
     const targetHandle = cat === 'trigger' ? 'trigger-in' : 'in-main';
-    const edgeStyle = EDGE_STYLES[cat] || EDGE_STYLES.row;
-    const edgeColor = EDGE_COLORS[cat] || '#4a90d9';
+    const isTriggerError = cat === 'trigger' && /error/i.test(connectorLabel || connectorName);
+    const edgeStyleKey = isTriggerError ? 'trigger_error' : cat;
+    const edgeStyle = EDGE_STYLES[edgeStyleKey] || EDGE_STYLES.row;
+    const edgeColor = EDGE_COLORS[edgeStyleKey] || '#4a90d9';
 
     // Auto-name row/iterate edges as row1, row2, etc.
     const edgeLabel = cat === 'trigger' ? connectorLabel : getNextRowLabel();
@@ -1116,7 +1217,7 @@ export function DesignerProvider({ children }) {
       sourceHandle,
       targetHandle,
       type: 'smoothstep',
-      animated: cat === 'trigger' || cat === 'iterate',
+      animated: cat === 'iterate',
       style: edgeStyle,
       markerEnd: { type: 'arrowclosed', color: edgeColor },
       label: edgeLabel,
@@ -1412,6 +1513,10 @@ export function DesignerProvider({ children }) {
     pauseJob,
     stopJob,
     runningJobId,
+    // Run logs & summary
+    jobLogs,
+    runSummary,
+    clearLogs,
     // Dirty tracking
     dirtyJobIds,
     // ReactFlow setup

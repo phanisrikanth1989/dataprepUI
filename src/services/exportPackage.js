@@ -91,7 +91,8 @@ function generateConfig(jobDef) {
   for (const [ctxName, vars] of Object.entries(contexts)) {
     lines.push(`[${ctxName}]`);
     for (const [k, v] of Object.entries(vars || {})) {
-      lines.push(`${k} = ${v}`);
+      const val = v && typeof v === 'object' && 'value' in v ? v.value : v;
+      lines.push(`${k} = ${val}`);
     }
     lines.push('');
   }

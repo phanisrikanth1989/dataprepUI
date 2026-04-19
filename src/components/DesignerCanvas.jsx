@@ -11,6 +11,7 @@ import TalendComponentNode from './TalendComponentNode';
 import JobTabs from './JobTabs';
 import ContextVariablesPanel from './ContextVariablesPanel';
 import ContextMenu from './ContextMenu';
+import { formatDuration } from '../services/engineService';
 import {
   Save,
   Play,
@@ -234,6 +235,9 @@ export default function DesignerCanvas() {
     stopJob,
     runningJobId,
     jobMetadata,
+    jobLogs,
+    runSummary,
+    clearLogs,
     addEdgeManual,
     addComponentToCanvas,
     registry,
@@ -252,6 +256,9 @@ export default function DesignerCanvas() {
   const [activeSubjobId, setActiveSubjobId] = useState(null); // root id of selected subjob
   const justStartedConnecting = useRef(false);
   const importFileRef = useRef(null);
+  const consoleEndRef = useRef(null);
+  const [logFilter, setLogFilter] = useState('all'); // 'all' | 'info' | 'warn' | 'error'
+  const [autoScroll, setAutoScroll] = useState(true);
 
   // ── Quick-add component (type-to-search on canvas) ──
   const [quickSearch, setQuickSearch] = useState(null); // null or { term: string }
@@ -301,6 +308,31 @@ export default function DesignerCanvas() {
   const isRunning = runningJobId != null && runningJobId === activeJobId;
   const isPaused = jobMetadata.status === 'paused';
   const status = jobMetadata.status || 'draft';
+
+  // ── Log data for the active job ──
+  const currentLogs = jobLogs[activeJobId] || [];
+  const currentSummary = runSummary[activeJobId] || null;
+
+  const filteredLogs = useMemo(() => {
+    if (logFilter === 'all') return currentLogs;
+    if (logFilter === 'error') return currentLogs.filter((l) => l.type === 'error' || l.type === 'warn');
+    return currentLogs.filter((l) => l.type === logFilter);
+  }, [currentLogs, logFilter]);
+
+  // Auto-scroll console to bottom when new logs arrive
+  useEffect(() => {
+    if (autoScroll && consoleEndRef.current) {
+      consoleEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [filteredLogs.length, autoScroll]);
+
+  // Auto-open bottom panel when run starts
+  useEffect(() => {
+    if (isRunning) {
+      setBottomOpen(true);
+      setBottomTab('run');
+    }
+  }, [isRunning]);
 
   /* ── Edge label editing on double-click ── */
   const handleEdgeDoubleClick = useCallback((evt, edge) => {
@@ -453,8 +485,10 @@ export default function DesignerCanvas() {
 
   const StatusIcon = ({ s }) => {
     switch (s) {
+      case 'connecting': return <Loader2 size={13} className="spin" />;
       case 'running': return <Loader2 size={13} className="spin" />;
       case 'completed': return <CheckCircle2 size={13} />;
+      case 'failed': return <XCircle size={13} />;
       case 'stopped': return <XCircle size={13} />;
       case 'paused': return <Pause size={13} />;
       default: return <Clock size={13} />;
@@ -770,15 +804,34 @@ export default function DesignerCanvas() {
                   </button>
                   <button
                     className="run-panel__btn"
-                    onClick={() => {
-                      if (isRunning || isPaused) stopJob();
-                    }}
-                    disabled={status === 'draft'}
+                    onClick={() => clearLogs(activeJobId)}
+                    disabled={isRunning}
                     title="Clear console"
                   >
                     <Trash2 size={14} />
                     Clear
                   </button>
+                  <div className="run-panel__separator" />
+                  {/* Log level filter */}
+                  <div className="run-panel__filter">
+                    <span className="run-panel__filter-label">Filter:</span>
+                    {['all', 'info', 'warn', 'error'].map((f) => (
+                      <button
+                        key={f}
+                        className={`run-panel__filter-btn ${logFilter === f ? 'run-panel__filter-btn--active' : ''} ${f !== 'all' ? `run-panel__filter-btn--${f}` : ''}`}
+                        onClick={() => setLogFilter(f)}
+                      >
+                        {f === 'all' ? 'All' : f === 'info' ? 'Info' : f === 'warn' ? 'Warn' : 'Error'}
+                        {f !== 'all' && (
+                          <span className="run-panel__filter-count">
+                            {currentLogs.filter((l) =>
+                              f === 'error' ? (l.type === 'error' || l.type === 'warn') : l.type === f
+                            ).length}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                   <div className="run-panel__separator" />
                   <div className="run-panel__info">
                     <span className="run-panel__info-label">Status:</span>
@@ -787,46 +840,95 @@ export default function DesignerCanvas() {
                       {status}
                     </span>
                   </div>
+                  {currentSummary?.duration != null && (
+                    <div className="run-panel__info">
+                      <span className="run-panel__info-label">Duration:</span>
+                      <span className="run-panel__info-value">{formatDuration(currentSummary.duration)}</span>
+                    </div>
+                  )}
                   <div className="run-panel__info">
-                    <span className="run-panel__info-label">Components:</span>
-                    <span className="run-panel__info-value">{nodes.length}</span>
-                  </div>
-                  <div className="run-panel__info">
-                    <span className="run-panel__info-label">Connections:</span>
-                    <span className="run-panel__info-value">{edges.length}</span>
+                    <span className="run-panel__info-label">Lines:</span>
+                    <span className="run-panel__info-value">{currentLogs.length}</span>
                   </div>
                 </div>
                 <div className="run-panel__console">
-                  <div className="run-panel__console-header">Console Output</div>
-                  <div className="run-panel__console-body">
-                    {status === 'draft' || status === 'saved' ? (
-                      <span className="run-panel__console-msg">Click "Run" to execute the job.</span>
-                    ) : status === 'running' ? (
-                      <>
-                        <span className="run-panel__console-line run-panel__console-line--info">[INFO] Job "{jobMetadata.name}" started...</span>
-                        <span className="run-panel__console-line run-panel__console-line--info">[INFO] Initializing {nodes.length} components...</span>
-                        <span className="run-panel__console-line"><Loader2 size={11} className="spin" /> Processing...</span>
-                      </>
-                    ) : status === 'paused' ? (
-                      <>
-                        <span className="run-panel__console-line run-panel__console-line--info">[INFO] Job "{jobMetadata.name}" started...</span>
-                        <span className="run-panel__console-line run-panel__console-line--warn">[WARN] Job paused by user.</span>
-                      </>
-                    ) : status === 'stopped' ? (
-                      <>
-                        <span className="run-panel__console-line run-panel__console-line--info">[INFO] Job "{jobMetadata.name}" started...</span>
-                        <span className="run-panel__console-line run-panel__console-line--error">[STOP] Job stopped by user.</span>
-                      </>
-                    ) : status === 'completed' ? (
-                      <>
-                        <span className="run-panel__console-line run-panel__console-line--info">[INFO] Job "{jobMetadata.name}" started...</span>
-                        <span className="run-panel__console-line run-panel__console-line--info">[INFO] Initialized {nodes.length} components.</span>
-                        <span className="run-panel__console-line run-panel__console-line--info">[INFO] Processing {edges.length} connections...</span>
-                        <span className="run-panel__console-line run-panel__console-line--success">[OK] Job completed successfully.</span>
-                      </>
-                    ) : null}
+                  <div className="run-panel__console-header">
+                    <span>Console Output</span>
+                    <label className="run-panel__autoscroll">
+                      <input
+                        type="checkbox"
+                        checked={autoScroll}
+                        onChange={(e) => setAutoScroll(e.target.checked)}
+                      />
+                      <span>Auto-scroll</span>
+                    </label>
+                  </div>
+                  <div
+                    className="run-panel__console-body"
+                    onScroll={(e) => {
+                      const el = e.target;
+                      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+                      if (autoScroll !== atBottom) setAutoScroll(atBottom);
+                    }}
+                  >
+                    {currentLogs.length === 0 ? (
+                      <span className="run-panel__console-msg">Click "Run" to execute the job on the backend engine.</span>
+                    ) : (
+                      filteredLogs.map((log, idx) => {
+                        const levelClass = log.type === 'success'
+                          ? 'run-panel__console-line--success'
+                          : log.type === 'error'
+                          ? 'run-panel__console-line--error'
+                          : log.type === 'warn'
+                          ? 'run-panel__console-line--warn'
+                          : log.type === 'debug'
+                          ? 'run-panel__console-line--debug'
+                          : log.type === 'metric'
+                          ? 'run-panel__console-line--metric'
+                          : 'run-panel__console-line--info';
+
+                        const tag = log.type === 'success' ? 'OK'
+                          : log.type === 'metric' ? 'STAT'
+                          : log.type.toUpperCase();
+
+                        const ts = log.timestamp
+                          ? new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 })
+                          : '';
+
+                        return (
+                          <div key={idx} className={`run-panel__console-line ${levelClass}`}>
+                            <span className="run-panel__log-ts">{ts}</span>
+                            <span className={`run-panel__log-tag run-panel__log-tag--${log.type}`}>[{tag}]</span>
+                            {log.component && (
+                              <span className="run-panel__log-comp">{log.component}</span>
+                            )}
+                            <span className="run-panel__log-msg">{log.message}</span>
+                          </div>
+                        );
+                      })
+                    )}
+                    {isRunning && (
+                      <div className="run-panel__console-line run-panel__console-line--running">
+                        <Loader2 size={11} className="spin" />
+                        <span className="run-panel__log-msg">Processing...</span>
+                      </div>
+                    )}
+                    <div ref={consoleEndRef} />
                   </div>
                 </div>
+                {/* Run summary bar */}
+                {currentSummary && !isRunning && (
+                  <div className={`run-panel__summary run-panel__summary--${currentSummary.status}`}>
+                    {currentSummary.status === 'completed' && <CheckCircle2 size={14} />}
+                    {currentSummary.status === 'failed' && <XCircle size={14} />}
+                    {currentSummary.status === 'stopped' && <AlertCircle size={14} />}
+                    <span>
+                      Job {currentSummary.status}
+                      {currentSummary.duration != null && ` in ${formatDuration(currentSummary.duration)}`}
+                      {currentSummary.rowsProcessed != null && ` · ${currentSummary.rowsProcessed.toLocaleString()} rows processed`}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
