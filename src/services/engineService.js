@@ -19,6 +19,9 @@ const API_BASE = import.meta.env.VITE_ENGINE_API_BASE || 'http://localhost:8000'
 /** How often to poll for run status (ms) */
 const POLL_INTERVAL = 2000;
 
+/** Maximum time to poll before giving up (ms) — 5 minutes */
+const MAX_POLL_DURATION = 5 * 60 * 1000;
+
 /**
  * Helper — make a fetch call and parse the JSON response.
  * Throws with a descriptive message on non-2xx responses.
@@ -150,9 +153,17 @@ export function runJobOnEngine(jobJsonString, { onLog, onStatusChange, onError, 
       let lastStats = null;
       let pollErrorCount = 0;
       const MAX_POLL_ERRORS = 5;
+      const pollStartTime = Date.now();
 
       function poll() {
         if (aborted) return;
+
+        // Timeout: stop polling after MAX_POLL_DURATION
+        if (Date.now() - pollStartTime > MAX_POLL_DURATION) {
+          const timeoutErr = new Error(`Polling timed out after ${MAX_POLL_DURATION / 1000}s — engine may still be running.`);
+          failAtStep('3/3 (Monitoring)', timeoutErr);
+          return;
+        }
 
         apiFetch(`${API_BASE}/api/jobs/runs/${encodeURIComponent(runId)}`)
           .then((statusRes) => {

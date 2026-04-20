@@ -133,11 +133,13 @@ export function DesignerProvider({ children }) {
   // ── Run Job (real engine execution) ──
   const [runningJobId, setRunningJobId] = useState(null);
   const runHandleRef = useRef(null); // { abort(), runId }
+  const isRunSubmitting = useRef(false); // guard against double-submit
   const [jobLogs, setJobLogs] = useState({}); // { [jobId]: [ {type, message, timestamp, component} ] }
   const [runSummary, setRunSummary] = useState({}); // { [jobId]: { status, startTime, endTime, duration, rowsProcessed } }
 
   // ── Dirty tracking (unsaved changes per job) ──
   const [dirtyJobIds, setDirtyJobIds] = useState(new Set());
+  const [saveError, setSaveError] = useState(null); // string message when localStorage save fails
 
   const markDirty = useCallback((jobId) => {
     const id = jobId || activeJobId;
@@ -338,7 +340,15 @@ export function DesignerProvider({ children }) {
       const saved = JSON.parse(localStorage.getItem('dataprep-saved-jobs') || '{}');
       saved[job.id] = JSON.parse(JSON.stringify(job));
       localStorage.setItem('dataprep-saved-jobs', JSON.stringify(saved));
-    } catch { /* ignore */ }
+      setSaveError(null);
+    } catch (err) {
+      const msg = err.name === 'QuotaExceededError'
+        ? 'Storage full — cannot save. Export your job as JSON to avoid data loss.'
+        : `Save failed: ${err.message}`;
+      setSaveError(msg);
+      console.error('saveJob failed:', err);
+      return; // don't mark as saved/clean if save actually failed
+    }
     updateActiveJob((j) => ({
       ...j,
       metadata: { ...j.metadata, status: 'saved', modified: new Date().toISOString().slice(0, 10) },
@@ -359,7 +369,14 @@ export function DesignerProvider({ children }) {
             }
           }
           localStorage.setItem('dataprep-saved-jobs', JSON.stringify(saved));
-        } catch { /* ignore */ }
+          setSaveError(null);
+        } catch (err) {
+          const msg = err.name === 'QuotaExceededError'
+            ? 'Storage full — auto-save failed. Export your jobs to avoid data loss.'
+            : `Auto-save failed: ${err.message}`;
+          setSaveError(msg);
+          console.error('Auto-save failed:', err);
+        }
         return currentJobs;
       });
       setDirtyJobIds(new Set());
@@ -941,11 +958,13 @@ export function DesignerProvider({ children }) {
   }, [activeJobId]);
 
   const runJob = useCallback(() => {
-    if (runningJobId) return;
+    if (runningJobId || isRunSubmitting.current) return;
+    isRunSubmitting.current = true;
 
     const jobId = activeJobId;
     const jsonStr = getExportJsonString();
     if (!jsonStr) {
+      isRunSubmitting.current = false;
       appendLog(jobId, { type: 'error', message: 'Cannot run: no job data to export.', timestamp: new Date().toISOString() });
       return;
     }
@@ -955,6 +974,7 @@ export function DesignerProvider({ children }) {
     setRunSummary((prev) => { const next = { ...prev }; delete next[jobId]; return next; });
 
     setRunningJobId(jobId);
+    isRunSubmitting.current = false;
     updateActiveJob((j) => ({
       ...j,
       metadata: { ...j.metadata, status: 'running', modified: new Date().toISOString().slice(0, 10) },
@@ -1505,6 +1525,8 @@ export function DesignerProvider({ children }) {
     removeContextVariable,
     // Job actions
     saveJob,
+    saveError,
+    setSaveError,
     exportJobAsJson,
     exportJobAsPackage,
     importJobFromJson,

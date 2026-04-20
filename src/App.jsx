@@ -1,3 +1,4 @@
+import { Component } from 'react';
 import { DesignerProvider } from './context/DesignerContext';
 import ComponentPalette from './components/ComponentPalette';
 import DesignerCanvas from './components/DesignerCanvas';
@@ -9,11 +10,60 @@ import { useDesigner } from './context/DesignerContext';
 import { Sun, Moon, Layers, LayoutList, Database, Github } from 'lucide-react';
 import './App.css';
 
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('DataPrep Studio crashed:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '2rem', textAlign: 'center', fontFamily: 'sans-serif' }}>
+          <h2>Something went wrong</h2>
+          <p style={{ color: '#888' }}>{this.state.error?.message || 'An unexpected error occurred.'}</p>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            style={{ marginTop: '1rem', padding: '0.5rem 1rem', cursor: 'pointer' }}
+          >
+            Try Again
+          </button>
+          <button
+            onClick={() => window.location.reload()}
+            style={{ marginTop: '1rem', marginLeft: '0.5rem', padding: '0.5rem 1rem', cursor: 'pointer' }}
+          >
+            Reload Page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function AppLayout() {
-  const { selectedNode, theme, toggleTheme, leftTab, setLeftTab } = useDesigner();
+  const { selectedNode, theme, toggleTheme, leftTab, setLeftTab, saveError, setSaveError } = useDesigner();
 
   return (
     <div className="app" data-theme={theme}>
+      {/* Save error banner */}
+      {saveError && (
+        <div style={{
+          background: '#d32f2f', color: '#fff', padding: '0.5rem 1rem',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem'
+        }}>
+          <span>⚠ {saveError}</span>
+          <button onClick={() => setSaveError(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+        </div>
+      )}
       {/* Header */}
       <header className="app-header">
         <div className="app-header__brand">
@@ -92,8 +142,10 @@ function AppLayout() {
 
 export default function App() {
   return (
-    <DesignerProvider>
-      <AppLayout />
-    </DesignerProvider>
+    <ErrorBoundary>
+      <DesignerProvider>
+        <AppLayout />
+      </DesignerProvider>
+    </ErrorBoundary>
   );
 }
