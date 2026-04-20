@@ -747,10 +747,10 @@ body {
 /* ── Talend Node ──────────────────────────────────── */
 .talend-node {
   background: var(--bg-secondary);
-  border: 2px solid var(--border-color);
-  border-radius: 8px;
-  min-width: 180px;
-  max-width: 240px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  min-width: 72px;
+  max-width: 100px;
   box-shadow: var(--shadow-node);
   transition: border-color var(--transition), box-shadow var(--transition);
   position: relative;
@@ -763,20 +763,20 @@ body {
 
 .talend-node--selected {
   border-color: var(--node-color, var(--accent));
-  box-shadow: 0 0 0 2px var(--node-color, var(--accent)), var(--shadow-node-hover);
+  box-shadow: 0 0 0 1px var(--node-color, var(--accent)), var(--shadow-node-hover);
 }
 
 .talend-node__body {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 4px;
+  padding: 3px 5px;
 }
 
 .talend-node__icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -789,34 +789,36 @@ body {
 }
 
 .talend-node__label {
-  font-size: 12px;
+  font-size: 7.5px;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
 .talend-node__type {
-  font-size: 10px;
+  font-size: 6.5px;
   color: var(--text-muted);
+  line-height: 1.2;
 }
 
 .talend-node__ports {
   display: flex;
-  gap: 4px;
-  padding: 0 12px 8px;
+  gap: 2px;
+  padding: 0 5px 3px;
   flex-wrap: wrap;
 }
 
 .port-badge {
-  font-size: 9px;
+  font-size: 5.5px;
   font-weight: 600;
   color: #fff;
-  padding: 1px 6px;
-  border-radius: 3px;
+  padding: 0px 3px;
+  border-radius: 2px;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
 }
 
 /* ── Properties Panel ─────────────────────────────── */

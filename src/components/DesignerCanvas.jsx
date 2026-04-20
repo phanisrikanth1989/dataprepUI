@@ -387,10 +387,10 @@ export default function DesignerCanvas() {
       groups[root].push(node);
     }
 
-    const NODE_W = 200;
-    const NODE_H = 70;
-    const PAD = 25;
-    const HDR = 22;
+    const NODE_W = 100;
+    const NODE_H = 36;
+    const PAD = 16;
+    const HDR = 14;
 
     return Object.entries(groups)
       .filter(([, g]) => g.length >= 2)

@@ -106,9 +106,9 @@ function TalendComponentNode({ data, selected }) {
               style={{
                 top: `${((i + 1) * 100) / (inputs.length + 1)}%`,
                 background: '#4a90d9',
-                width: 10,
-                height: 10,
-                border: '2px solid #fff',
+                width: 5,
+                height: 5,
+                border: '1px solid #fff',
               }}
               title={inp.label}
             />
@@ -121,9 +121,9 @@ function TalendComponentNode({ data, selected }) {
             style={{
               top: '50%',
               background: '#4a90d9',
-              width: 10,
-              height: 10,
-              border: '2px solid #fff',
+              width: 5,
+              height: 5,
+              border: '1px solid #fff',
             }}
           />
         )}
@@ -136,9 +136,9 @@ function TalendComponentNode({ data, selected }) {
           id="trigger-in"
           style={{
             background: '#e74c3c',
-            width: 8,
-            height: 8,
-            border: '2px solid #fff',
+            width: 4,
+            height: 4,
+            border: '1px solid #fff',
           }}
           title="Trigger In"
         />
@@ -147,7 +147,7 @@ function TalendComponentNode({ data, selected }) {
       {/* Node body */}
       <div className="talend-node__body">
         <div className="talend-node__icon" style={{ backgroundColor: color }}>
-          <Icon size={18} color="#fff" />
+          <Icon size={9} color="#fff" />
         </div>
         <div className="talend-node__info">
           <div className="talend-node__label">{label}</div>
@@ -191,9 +191,9 @@ function TalendComponentNode({ data, selected }) {
                     : out.type === 'lookup'
                     ? '#f39c12'
                     : color,
-                width: 10,
-                height: 10,
-                border: '2px solid #fff',
+                width: 5,
+                height: 5,
+                border: '1px solid #fff',
               }}
               title={out.label}
             />
@@ -206,9 +206,9 @@ function TalendComponentNode({ data, selected }) {
             style={{
               top: '50%',
               background: color,
-              width: 10,
-              height: 10,
-              border: '2px solid #fff',
+              width: 5,
+              height: 5,
+              border: '1px solid #fff',
             }}
           />
         )}
@@ -221,9 +221,9 @@ function TalendComponentNode({ data, selected }) {
           id="trigger-out"
           style={{
             background: '#e74c3c',
-            width: 8,
-            height: 8,
-            border: '2px solid #fff',
+            width: 4,
+            height: 4,
+            border: '1px solid #fff',
           }}
           title="Trigger Out"
         />

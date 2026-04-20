@@ -565,6 +565,17 @@ export function DesignerProvider({ children }) {
   }, [jobs, activeJobId]);
 
   // ── Import Job from JSON (reverse of export) ──
+  // Standard layout constants for imported nodes (matches reduced node size ~140×50px)
+  const IMPORT_NODE_W = 100;      // approximate rendered node width
+  const IMPORT_NODE_H = 36;       // approximate rendered node height
+  const IMPORT_GAP_X = 30;        // horizontal gap between nodes
+  const IMPORT_GAP_Y = 50;        // vertical gap between rows (extra for trigger edges)
+  const IMPORT_SPACING_X = IMPORT_NODE_W + IMPORT_GAP_X;  // 180px total horizontal step
+  const IMPORT_SPACING_Y = IMPORT_NODE_H + IMPORT_GAP_Y;  // 110px total vertical step
+  const IMPORT_ORIGIN_X = 80;     // left margin on canvas
+  const IMPORT_ORIGIN_Y = 80;     // top margin on canvas
+  const IMPORT_GRID_COLS = 5;     // max nodes per row in auto-grid layout
+
   const importJobFromJson = useCallback((jsonString) => {
     const data = typeof jsonString === 'string' ? JSON.parse(jsonString) : jsonString;
 
@@ -665,6 +676,65 @@ export function DesignerProvider({ children }) {
         });
       }
       newProps[internalId] = props;
+    }
+
+    // ── Normalize node positions to a standard layout ──
+    if (newNodes.length > 0) {
+      const allAtOrigin = newNodes.every((n) => n.position.x === 0 && n.position.y === 0);
+      if (allAtOrigin) {
+        // No meaningful positions — lay out in a grid
+        newNodes.forEach((n, i) => {
+          const col = i % IMPORT_GRID_COLS;
+          const row = Math.floor(i / IMPORT_GRID_COLS);
+          n.position = {
+            x: IMPORT_ORIGIN_X + col * IMPORT_SPACING_X,
+            y: IMPORT_ORIGIN_Y + row * IMPORT_SPACING_Y,
+          };
+        });
+      } else {
+        // Positions exist — shift to standard origin
+        const minX = Math.min(...newNodes.map((n) => n.position.x));
+        const minY = Math.min(...newNodes.map((n) => n.position.y));
+        const offsetX = IMPORT_ORIGIN_X - minX;
+        const offsetY = IMPORT_ORIGIN_Y - minY;
+        for (const n of newNodes) {
+          n.position = {
+            x: Math.round(n.position.x + offsetX),
+            y: Math.round(n.position.y + offsetY),
+          };
+        }
+      }
+
+      // ── Resolve any overlapping nodes ──
+      // Check every pair; if bounding boxes overlap, push the later node right/down
+      const resolveOverlaps = (nodes) => {
+        const w = IMPORT_NODE_W;
+        const h = IMPORT_NODE_H;
+        let changed = true;
+        let passes = 0;
+        while (changed && passes < 20) {
+          changed = false;
+          passes++;
+          for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+              const a = nodes[i].position;
+              const b = nodes[j].position;
+              // Check if bounding boxes overlap (with a small gap)
+              const overlapX = a.x < b.x + w + IMPORT_GAP_X && a.x + w + IMPORT_GAP_X > b.x;
+              const overlapY = a.y < b.y + h + 10 && a.y + h + 10 > b.y;
+              if (overlapX && overlapY) {
+                // Push node j to the right; if it goes too far, wrap to next row
+                nodes[j].position = {
+                  x: Math.round(Math.max(b.x, a.x + IMPORT_SPACING_X)),
+                  y: Math.round(b.y),
+                };
+                changed = true;
+              }
+            }
+          }
+        }
+      };
+      resolveOverlaps(newNodes);
     }
 
     // Edge style constants
@@ -786,8 +856,16 @@ export function DesignerProvider({ children }) {
 
     setJobs((prev) => [...prev, newJob]);
     setActiveJobId(newJobId);
+
+    // Fit canvas to show all imported nodes after React renders them
+    setTimeout(() => {
+      if (reactFlowInstance) {
+        reactFlowInstance.fitView({ padding: 0.2, duration: 300 });
+      }
+    }, 100);
+
     return newJobId;
-  }, []);
+  }, [reactFlowInstance, registry]);
 
   // ── Get export JSON string (without downloading) ──
   const getExportJsonString = useCallback(() => {
