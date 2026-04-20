@@ -3040,9 +3040,32 @@ body {
 .bottom-panel__status-text--saved { color: var(--success); }
 .bottom-panel__status-text--draft { color: var(--text-muted); }
 
+/* ── Resize handle ── */
+.bottom-panel__resize {
+  height: 4px;
+  cursor: ns-resize;
+  background: transparent;
+  position: relative;
+  flex-shrink: 0;
+}
+.bottom-panel__resize::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-color);
+  transition: background var(--transition);
+}
+.bottom-panel__resize:hover::after {
+  background: var(--accent);
+}
+
 /* ── Panel body ── */
 .bottom-panel__body {
-  max-height: 220px;
   overflow: auto;
   background: var(--bg-primary);
 }

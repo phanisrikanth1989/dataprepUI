@@ -251,6 +251,8 @@ export default function DesignerCanvas() {
 
   const [bottomTab, setBottomTab] = useState('run');
   const [bottomOpen, setBottomOpen] = useState(false);
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(220);
+  const bottomDragRef = useRef(null);
   const [nodeContextMenu, setNodeContextMenu] = useState(null);
   const [connectingFrom, setConnectingFrom] = useState(null);
   const [activeSubjobId, setActiveSubjobId] = useState(null); // root id of selected subjob
@@ -333,6 +335,13 @@ export default function DesignerCanvas() {
       setBottomTab('run');
     }
   }, [isRunning]);
+
+  // Collapse bottom panel when canvas is empty
+  useEffect(() => {
+    if (nodes.length === 0) {
+      setBottomOpen(false);
+    }
+  }, [nodes.length]);
 
   /* ── Edge label editing on double-click ── */
   const handleEdgeDoubleClick = useCallback((evt, edge) => {
@@ -482,6 +491,23 @@ export default function DesignerCanvas() {
       setBottomOpen(true);
     }
   };
+
+  // ── Bottom-panel resize drag ──
+  const onBottomDragStart = useCallback((e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = bottomPanelHeight;
+    const onMove = (ev) => {
+      const newH = Math.max(80, Math.min(startH + (startY - ev.clientY), window.innerHeight - 120));
+      setBottomPanelHeight(newH);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [bottomPanelHeight]);
 
   const StatusIcon = ({ s }) => {
     switch (s) {
@@ -778,9 +804,11 @@ export default function DesignerCanvas() {
           </div>
         </div>
 
-        {/* Panel body */}
+        {/* Resize handle + Panel body */}
         {bottomOpen && (
-          <div className="bottom-panel__body">
+          <>
+          <div className="bottom-panel__resize" onMouseDown={onBottomDragStart} />
+          <div className="bottom-panel__body" style={{ height: bottomPanelHeight }}>
             {bottomTab === 'run' && (
               <div className="run-panel">
                 <div className="run-panel__toolbar">
@@ -936,6 +964,7 @@ export default function DesignerCanvas() {
               <ContextVariablesPanel />
             )}
           </div>
+          </>
         )}
       </div>
     </div>
