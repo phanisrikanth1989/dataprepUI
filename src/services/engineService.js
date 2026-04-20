@@ -1,25 +1,61 @@
 /**
  * Engine Service — calls the Python backend engine to run a job
- * and streams log output back via Server-Sent Events (SSE).
+ * and polls for execution status.
  *
  * Backend contract:
- *   POST /api/v1/jobs/run
- *     Body: { job_definition: <job JSON object> }
- *     Response: 200 with Content-Type: text/event-stream
- *       Each SSE event has:
- *         data: { "type": "info"|"warn"|"error"|"success"|"debug"|"metric", "message": "...", "timestamp": "...", "component"?: "..." }
- *       Final event:
- *         data: { "type": "end", "status": "completed"|"failed", "message": "...", "timestamp": "..." }
+ *   POST /api/jobs/upload
+ *     Body: <job JSON object>
+ *     Response: { job_id: <string> }
  *
- *   POST /api/v1/jobs/stop
- *     Body: { run_id: <string> }
- *     Response: 200 { "status": "stopped" }
+ *   POST /api/jobs/{job_id}/run
+ *     Response: { run_id: <string> }
+ *
+ *   GET /api/jobs/runs/{run_id}
+ *     Response: { status: "pending"|"running"|"completed"|"failed", stats: {...}, error: <string|null> }
  */
 
 const API_BASE = import.meta.env.VITE_ENGINE_API_BASE || 'http://localhost:8000';
 
+/** How often to poll for run status (ms) */
+const POLL_INTERVAL = 2000;
+
 /**
- * Run a job on the backend engine and stream logs back.
+ * Helper — make a fetch call and parse the JSON response.
+ * Throws with a descriptive message on non-2xx responses.
+ */
+async function apiFetch(url, options = {}) {
+  const { headers: customHeaders, ...rest } = options;
+  // Only set default JSON Content-Type if no custom headers are provided
+  const headers = customHeaders !== undefined
+    ? customHeaders
+    : { 'Content-Type': 'application/json' };
+
+  const response = await fetch(url, { headers, ...rest });
+  if (!response.ok) {
+    let detail;
+    try {
+      const body = await response.json();
+      // FastAPI 422 returns { detail: [ {loc, msg, type}, ... ] }
+      if (Array.isArray(body.detail)) {
+        detail = body.detail.map((d) => `${(d.loc || []).join('.')}: ${d.msg}`).join('; ');
+      } else {
+        detail = body.detail || body.message || body.error || JSON.stringify(body);
+      }
+    } catch {
+      detail = await response.text().catch(() => `HTTP ${response.status}`);
+    }
+    throw new Error(`Engine returned ${response.status}: ${detail}`);
+  }
+  return response.json();
+}
+
+/**
+ * Run a job on the backend engine and poll for status.
+ *
+ * Flow:
+ *   1. POST /api/jobs/upload      → { job_id }
+ *   2. POST /api/jobs/{job_id}/run → { run_id }
+ *   3. GET  /api/jobs/runs/{run_id} (poll until terminal status)
  *
  * @param {string} jobJsonString - The exported job JSON string
  * @param {object} callbacks
@@ -30,192 +66,236 @@ const API_BASE = import.meta.env.VITE_ENGINE_API_BASE || 'http://localhost:8000'
  * @returns {{ abort: () => void, runId: string }}
  */
 export function runJobOnEngine(jobJsonString, { onLog, onStatusChange, onError, onComplete }) {
-  const controller = new AbortController();
-  const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  let aborted = false;
+  let pollTimer = null;
+  const handle = { runId: '', abort };
+
   const startTime = new Date().toISOString();
 
-  onStatusChange('connecting');
-  onLog({
-    type: 'info',
-    message: 'Connecting to engine...',
-    timestamp: startTime,
-  });
+  function abort() {
+    aborted = true;
+    if (pollTimer) clearTimeout(pollTimer);
+    onLog({ type: 'warn', message: '⛔ Job execution aborted by user.', timestamp: new Date().toISOString() });
+    onStatusChange('stopped');
+    onComplete({
+      status: 'stopped',
+      startTime,
+      endTime: new Date().toISOString(),
+      duration: Date.now() - new Date(startTime).getTime(),
+    });
+  }
+
+  function failAtStep(step, err) {
+    if (aborted) return;
+    const errorMsg = err.message || 'Unknown error';
+    onLog({ type: 'error', message: `✖ Step ${step} failed: ${errorMsg}`, timestamp: new Date().toISOString() });
+    onError(errorMsg);
+    onStatusChange('failed');
+    onComplete({
+      status: 'failed',
+      startTime,
+      endTime: new Date().toISOString(),
+      duration: Date.now() - new Date(startTime).getTime(),
+    });
+  }
 
   const jobDef = JSON.parse(jobJsonString);
+  const jobName = jobDef.job_name || 'Untitled';
 
-  fetch(`${API_BASE}/api/v1/jobs/run`, {
+  onStatusChange('connecting');
+  onLog({ type: 'info', message: `━━━ Running job: ${jobName} ━━━`, timestamp: startTime });
+
+  // ═══════════════════════════════════════════════════
+  // STEP 1 — Upload job JSON to backend
+  // ═══════════════════════════════════════════════════
+  onLog({ type: 'info', message: `▶ Step 1/3 — Uploading job to engine (${API_BASE}/api/jobs/upload)...`, timestamp: new Date().toISOString() });
+
+  const blob = new Blob([JSON.stringify(jobDef, null, 2)], { type: 'application/json' });
+  const formData = new FormData();
+  formData.append('file', blob, `${jobName}.json`);
+
+  apiFetch(`${API_BASE}/api/jobs/upload`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ job_definition: jobDef, run_id: runId }),
-    signal: controller.signal,
+    body: formData,
+    headers: {},
   })
-    .then((response) => {
-      if (!response.ok) {
-        return response.text().then((body) => {
-          let detail = body;
-          try {
-            const parsed = JSON.parse(body);
-            detail = parsed.detail || parsed.message || body;
-          } catch { /* use raw body */ }
-          throw new Error(`Engine returned ${response.status}: ${detail}`);
-        });
-      }
+    .then((uploadRes) => {
+      if (aborted) return;
+      const jobId = uploadRes.job_id;
+      onLog({ type: 'success', message: `✔ Step 1/3 — Upload successful (job_id: ${jobId})`, timestamp: new Date().toISOString() });
+
+      // ═══════════════════════════════════════════════
+      // STEP 2 — Trigger execution on the engine
+      // ═══════════════════════════════════════════════
+      onLog({ type: 'info', message: `▶ Step 2/3 — Starting execution (POST /api/jobs/${jobId}/run)...`, timestamp: new Date().toISOString() });
+
+      return apiFetch(`${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/run`, {
+        method: 'POST',
+      });
+    })
+    .then((runRes) => {
+      if (aborted || !runRes) return;
+      const runId = runRes.run_id;
+      handle.runId = runId;
 
       onStatusChange('running');
-      onLog({
-        type: 'info',
-        message: 'Connected to engine. Job execution started.',
-        timestamp: new Date().toISOString(),
-      });
+      onLog({ type: 'success', message: `✔ Step 2/3 — Execution started (run_id: ${runId})`, timestamp: new Date().toISOString() });
 
-      // Parse SSE stream
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+      // ═══════════════════════════════════════════════
+      // STEP 3 — Poll for status & stream logs
+      // ═══════════════════════════════════════════════
+      onLog({ type: 'info', message: `▶ Step 3/3 — Monitoring execution (polling every ${POLL_INTERVAL / 1000}s)...`, timestamp: new Date().toISOString() });
 
-      function processStream() {
-        return reader.read().then(({ done, value }) => {
-          if (done) {
-            // Stream ended — if we haven't received an explicit "end" event, treat as completed
-            const endTime = new Date().toISOString();
-            onComplete({
-              status: 'completed',
-              startTime,
-              endTime,
-              duration: new Date(endTime) - new Date(startTime),
-            });
-            onStatusChange('completed');
-            return;
-          }
+      let lastStatus = '';
+      let lastStats = null;
+      let pollErrorCount = 0;
+      const MAX_POLL_ERRORS = 5;
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop(); // keep incomplete line in buffer
+      function poll() {
+        if (aborted) return;
 
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith(':')) continue; // SSE comment or empty
+        apiFetch(`${API_BASE}/api/jobs/runs/${encodeURIComponent(runId)}`)
+          .then((statusRes) => {
+            if (aborted) return;
+            pollErrorCount = 0; // reset on success
 
-            if (trimmed.startsWith('data:')) {
-              const jsonStr = trimmed.slice(5).trim();
-              if (!jsonStr) continue;
-              try {
-                const event = JSON.parse(jsonStr);
+            const { status, stats, error, logs } = statusRes;
 
-                if (event.type === 'end') {
-                  const endTime = event.timestamp || new Date().toISOString();
-                  const finalStatus = event.status === 'failed' ? 'failed' : 'completed';
-
-                  onLog({
-                    type: finalStatus === 'failed' ? 'error' : 'success',
-                    message: event.message || `Job ${finalStatus}.`,
-                    timestamp: endTime,
-                    component: event.component,
-                  });
-
-                  onComplete({
-                    status: finalStatus,
-                    startTime,
-                    endTime,
-                    duration: new Date(endTime) - new Date(startTime),
-                    rowsProcessed: event.rows_processed,
-                  });
-                  onStatusChange(finalStatus);
-                  return; // stop reading
-                }
-
-                onLog({
-                  type: event.type || 'info',
-                  message: event.message || '',
-                  timestamp: event.timestamp || new Date().toISOString(),
-                  component: event.component,
-                });
-
-                // If the event has a status hint, forward it
-                if (event.status) {
-                  onStatusChange(event.status);
-                }
-              } catch {
-                // Not valid JSON — treat as plain text log
-                onLog({
-                  type: 'info',
-                  message: jsonStr,
-                  timestamp: new Date().toISOString(),
-                });
-              }
-            } else {
-              // Plain text line (non-SSE) — some backends may send raw lines
-              onLog({
-                type: 'info',
-                message: trimmed,
-                timestamp: new Date().toISOString(),
-              });
+            // Log status transitions
+            if (status !== lastStatus) {
+              lastStatus = status;
+              const icon = status === 'running' ? '⏳' : status === 'pending' ? '⏱' : '📊';
+              onLog({ type: 'info', message: `${icon} Engine status: ${status}`, timestamp: new Date().toISOString() });
+              onStatusChange(status);
             }
-          }
 
-          return processStream();
-        });
+            // Stream any logs returned by the status endpoint
+            if (Array.isArray(logs)) {
+              for (const line of logs) {
+                if (typeof line === 'string') {
+                  onLog({ type: 'info', message: line, timestamp: new Date().toISOString() });
+                } else if (line && line.message) {
+                  onLog({
+                    type: line.type || line.level || 'info',
+                    message: line.message,
+                    timestamp: line.timestamp || new Date().toISOString(),
+                    component: line.component,
+                  });
+                }
+              }
+            }
+
+            // Log stats updates
+            if (stats && JSON.stringify(stats) !== JSON.stringify(lastStats)) {
+              lastStats = stats;
+              const ts = new Date().toISOString();
+
+              // Extract and display component_stats as individual lines
+              if (stats.component_stats && typeof stats.component_stats === 'object') {
+                for (const [compId, compData] of Object.entries(stats.component_stats)) {
+                  if (typeof compData === 'object') {
+                    const details = Object.entries(compData).map(([k, v]) => `${k}: ${v}`).join(', ');
+                    onLog({ type: 'info', message: `  📦 [${compId}] ${details}`, timestamp: ts, component: compId });
+                  } else {
+                    onLog({ type: 'info', message: `  📦 [${compId}] ${compData}`, timestamp: ts, component: compId });
+                  }
+                }
+              }
+
+              // Display top-level scalar stats (skip nested objects already shown above)
+              const scalarParts = Object.entries(stats)
+                .filter(([k, v]) => typeof v !== 'object' || v === null)
+                .map(([k, v]) => `${k}: ${v}`);
+              if (scalarParts.length > 0) {
+                onLog({ type: 'metric', message: `📈 ${scalarParts.join(', ')}`, timestamp: ts });
+              }
+            }
+
+            // ── Terminal: completed / success ──
+            if (status === 'completed' || status === 'success') {
+              const endTime = new Date().toISOString();
+              const duration = new Date(endTime) - new Date(startTime);
+              onLog({ type: 'success', message: `✔ Step 3/3 — Job completed successfully (${formatDuration(duration)})`, timestamp: endTime });
+              onLog({ type: 'info', message: `━━━ Finished: ${jobName} ━━━`, timestamp: endTime });
+              onComplete({
+                status: 'completed',
+                startTime,
+                endTime,
+                duration,
+                rowsProcessed: stats?.rows_processed,
+              });
+              onStatusChange('completed');
+              return;
+            }
+
+            // ── Terminal: failed ──
+            if (status === 'failed') {
+              const endTime = new Date().toISOString();
+              const errorMsg = error || 'Job failed (no details from engine).';
+              onLog({ type: 'error', message: `✖ Step 3/3 — Execution failed: ${errorMsg}`, timestamp: endTime });
+              onLog({ type: 'info', message: `━━━ Failed: ${jobName} ━━━`, timestamp: endTime });
+              onError(errorMsg);
+              onComplete({
+                status: 'failed',
+                startTime,
+                endTime,
+                duration: new Date(endTime) - new Date(startTime),
+                rowsProcessed: stats?.rows_processed,
+              });
+              onStatusChange('failed');
+              return;
+            }
+
+            // Still running / pending — poll again
+            pollTimer = setTimeout(poll, POLL_INTERVAL);
+          })
+          .catch((err) => {
+            if (aborted) return;
+            pollErrorCount++;
+            if (pollErrorCount >= MAX_POLL_ERRORS) {
+              onLog({ type: 'error', message: `✖ Step 3/3 — Lost connection to engine after ${MAX_POLL_ERRORS} retries: ${err.message}`, timestamp: new Date().toISOString() });
+              failAtStep('3/3 (Monitoring)', err);
+              return;
+            }
+            onLog({ type: 'warn', message: `⚠ Poll error (${pollErrorCount}/${MAX_POLL_ERRORS}): ${err.message}. Retrying...`, timestamp: new Date().toISOString() });
+            pollTimer = setTimeout(poll, POLL_INTERVAL);
+          });
       }
 
-      return processStream();
+      poll();
     })
     .catch((err) => {
-      if (err.name === 'AbortError') {
-        onLog({
-          type: 'warn',
-          message: 'Job execution aborted by user.',
-          timestamp: new Date().toISOString(),
-        });
-        onStatusChange('stopped');
-        onComplete({
-          status: 'stopped',
-          startTime,
-          endTime: new Date().toISOString(),
-          duration: Date.now() - new Date(startTime).getTime(),
-        });
-        return;
+      // Determine which step failed based on the error context
+      if (err.message?.includes('/upload') || err.message?.includes('Upload')) {
+        failAtStep('1/3 (Upload)', err);
+      } else if (err.message?.includes('/run')) {
+        failAtStep('2/3 (Run)', err);
+      } else {
+        failAtStep('1/3 (Upload)', err);
       }
-
-      const errorMsg = err.message || 'Failed to connect to engine';
-      onLog({
-        type: 'error',
-        message: errorMsg,
-        timestamp: new Date().toISOString(),
-      });
-      onError(errorMsg);
-      onStatusChange('failed');
-      onComplete({
-        status: 'failed',
-        startTime,
-        endTime: new Date().toISOString(),
-        duration: Date.now() - new Date(startTime).getTime(),
-      });
     });
 
-  return {
-    runId,
-    abort: () => controller.abort(),
-  };
+  return handle;
 }
 
 /**
  * Send a stop signal to the backend for a running job.
+ * Note: If your backend adds a stop endpoint, update the URL here.
  * @param {string} runId
  * @returns {Promise<void>}
  */
 export async function stopJobOnEngine(runId) {
-  try {
-    const response = await fetch(`${API_BASE}/api/v1/jobs/stop`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ run_id: runId }),
-    });
-    if (!response.ok) {
-      console.warn('Stop request returned:', response.status);
-    }
-  } catch (err) {
-    console.warn('Failed to send stop signal:', err.message);
-  }
+  // Backend does not have a stop endpoint yet — abort is handled client-side.
+  // Uncomment below when the backend adds a stop route:
+  //
+  // try {
+  //   await apiFetch(`${API_BASE}/api/jobs/runs/${encodeURIComponent(runId)}/stop`, {
+  //     method: 'POST',
+  //   });
+  // } catch (err) {
+  //   console.warn('Failed to send stop signal:', err.message);
+  // }
+  console.warn(`stopJobOnEngine(${runId}): backend stop endpoint not available yet.`);
 }
 
 /**
