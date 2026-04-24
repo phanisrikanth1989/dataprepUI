@@ -609,8 +609,10 @@ export default function MapEditorDialog({
     if (!onOutputSchemaChange) return;
     const active = outputs[selectedOutputIdx];
     const schema = active?.schema || outputs[0]?.schema || [];
+    const currentOutputSchema = outputSchema || [];
+    if (JSON.stringify(schema) === JSON.stringify(currentOutputSchema)) return;
     onOutputSchemaChange(schema);
-  }, [outputs, selectedOutputIdx, onOutputSchemaChange]);
+  }, [outputs, selectedOutputIdx, outputSchema, onOutputSchemaChange]);
 
   const selectOutput = useCallback((name) => {
     setSelectedOutput(name);
