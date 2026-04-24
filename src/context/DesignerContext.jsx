@@ -384,6 +384,178 @@ export function DesignerProvider({ children }) {
     return () => clearInterval(timer);
   }, [dirtyJobIds]);
 
+  const mapTypeToEngine = (uiType) => {
+    const TYPE_MAP = { String: 'str', Integer: 'int', Long: 'long', Float: 'float', Double: 'double', Boolean: 'bool', Date: 'datetime', 'byte[]': 'bytes', BigDecimal: 'decimal', Character: 'char', Short: 'short', Object: 'object' };
+    return TYPE_MAP[uiType] || (uiType || 'str').toLowerCase();
+  };
+
+  const fmtCols = (cols) =>
+    (cols || []).map((c) => {
+      const col = { name: c.name, type: mapTypeToEngine(c.type || 'String'), nullable: c.nullable !== false, key: !!c.key };
+      if (c.length != null && c.length !== '') col.length = Number(c.length);
+      if (c.precision != null && c.precision !== '') col.precision = Number(c.precision);
+      if (c.date_pattern) col.date_pattern = c.date_pattern;
+      if (c.pattern) col.date_pattern = c.pattern;
+      return col;
+    });
+
+  const normalizeMapExpression = (expr) => {
+    const trimmed = typeof expr === 'string' ? expr.trim() : '';
+    if (!trimmed) return '';
+    return trimmed.startsWith('{{java}}') ? trimmed : `{{java}}${trimmed}`;
+  };
+
+  const buildComponentExport = (node, stableId, props, jNodes, jEdges, jProps, nodeInputSchema) => {
+    const cType = node.data.componentType;
+    const inputEdges = jEdges.filter((e) => e.target === node.id && e.data?.category !== 'trigger');
+    const outputEdges = jEdges.filter((e) => e.source === node.id && e.data?.category !== 'trigger');
+    const getEdgeLabel = (edge) => {
+      const sourceNode = jNodes.find((n) => n.id === edge.source);
+      return edge.label || sourceNode?.data?.label || edge.source;
+    };
+
+    if (cType === 'tMap' || cType === 'tXmlMap') {
+      const baseConfig = {};
+      for (const [k, v] of Object.entries(props || {})) {
+        if (k === '__schema' || k === '__mapConfig') continue;
+        baseConfig[k] = v;
+      }
+
+      const mapConfig = props.__mapConfig || {};
+      const inputSchemaOverrides = mapConfig.inputSchemaOverrides || {};
+      const inputExpressions = mapConfig.inputExpressions || {};
+      const inputFilters = mapConfig.inputFilters || {};
+      const lookupConfigs = mapConfig.lookupConfigs || {};
+      const matchModeMap = {
+        unique_match: 'UNIQUE_MATCH',
+        first_match: 'FIRST_MATCH',
+        all_matches: 'ALL_MATCHES',
+        all_rows: 'ALL_ROWS',
+      };
+      const joinModeMap = {
+        left_outer: 'LEFT_OUTER_JOIN',
+        inner_join: 'INNER_JOIN',
+      };
+
+      const mainEdge = inputEdges.find((edge) => !edge.targetHandle || edge.targetHandle === 'in-main') || null;
+      const lookupEdges = inputEdges.filter((edge) => edge !== mainEdge);
+      const getTableName = (edge) => getEdgeLabel(edge);
+      const buildMainInput = () => {
+        if (!mainEdge) return null;
+        const tableName = getTableName(mainEdge);
+        const filter = inputFilters[tableName] || '';
+        return {
+          name: tableName,
+          filter,
+          activate_filter: !!filter,
+          matching_mode: 'UNIQUE_MATCH',
+          lookup_mode: 'LOAD_ONCE',
+          size_state: 'INTERMEDIATE',
+          persistent: false,
+          activate_condensed_tool: false,
+          activate_global_map: false,
+        };
+      };
+
+      const buildLookupInput = (edge) => {
+        const tableName = getTableName(edge);
+        const lookupCfg = lookupConfigs[tableName] || {};
+        const filter = inputFilters[tableName] || '';
+        const schema = inputSchemaOverrides[tableName] || jProps[edge.source]?.__schema || [];
+        const exprMap = inputExpressions[tableName] || {};
+        const join_keys = schema
+          .filter((col) => exprMap[col.name])
+          .map((col) => ({
+            lookup_column: col.name,
+            expression: normalizeMapExpression(exprMap[col.name]),
+            type: mapTypeToEngine(col.type || 'String'),
+            nullable: col.nullable !== false,
+            operator: '=',
+          }));
+
+        return {
+          name: tableName,
+          matching_mode: matchModeMap[lookupCfg.matchModel] || 'UNIQUE_MATCH',
+          lookup_mode: lookupCfg.loadOnce === false ? 'LOAD_EACH' : 'LOAD_ONCE',
+          filter,
+          activate_filter: !!filter,
+          join_keys,
+          join_mode: joinModeMap[lookupCfg.joinModel] || 'LEFT_OUTER_JOIN',
+          size_state: 'INTERMEDIATE',
+          persistent: !!lookupCfg.storeTemp,
+          activate_condensed_tool: !!join_keys.length,
+          activate_global_map: false,
+        };
+      };
+
+      const uiOutputs = Array.isArray(mapConfig.outputs) && mapConfig.outputs.length > 0
+        ? mapConfig.outputs
+        : [{ name: 'out', schema: props.__schema || [], mappings: [], filter: '', isReject: false, isInnerJoinReject: false }];
+
+      const engineOutputs = uiOutputs.map((out) => ({
+        name: out.name || 'out',
+        is_reject: !!out.isReject,
+        inner_join_reject: !!out.isInnerJoinReject,
+        filter: normalizeMapExpression(out.filter || ''),
+        activate_filter: !!(out.filter || '').trim(),
+        columns: (out.schema || []).map((col) => {
+          const mapping = (out.mappings || []).find((m) => m.column === col.name);
+          return {
+            name: col.name,
+            expression: normalizeMapExpression(mapping?.expression || ''),
+            type: mapTypeToEngine(mapping?.type || col.type || 'String'),
+            nullable: col.nullable !== false,
+            operator: '',
+            length: col.length != null ? col.length : -1,
+            precision: col.precision != null ? col.precision : -1,
+            pattern: col.date_pattern || col.pattern || '',
+          };
+        }),
+        size_state: 'INTERMEDIATE',
+        catch_output_reject: true,
+        activate_global_map: false,
+      }));
+
+      return {
+        id: stableId,
+        type: cType.replace(/^t/, ''),
+        original_type: cType,
+        position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
+        config: {
+          ...baseConfig,
+          inputs: {
+            main: buildMainInput(),
+            lookups: lookupEdges.map((edge) => buildLookupInput(edge)),
+          },
+          variables: mapConfig.variables || [],
+          outputs: engineOutputs,
+          enable_auto_convert_type: baseConfig.enable_auto_convert_type ?? false,
+          tstatcatcher_stats: baseConfig.tstatcatcher_stats ?? false,
+        },
+        schema: {},
+        inputs: [buildMainInput()?.name, ...lookupEdges.map((edge) => getTableName(edge))].filter(Boolean),
+        outputs: engineOutputs.map((out) => out.name),
+      };
+    }
+
+    const config = {};
+    for (const [k, v] of Object.entries(props || {})) {
+      if (k === '__schema') continue;
+      config[k] = v;
+    }
+
+    return {
+      id: stableId,
+      type: cType.replace(/^t/, ''),
+      original_type: cType,
+      position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
+      config,
+      schema: { input: fmtCols(nodeInputSchema[node.id]), output: fmtCols(props.__schema) },
+      inputs: inputEdges.map((e) => e.label),
+      outputs: outputEdges.map((e) => e.label),
+    };
+  };
+
   // ── Export Job as JSON download (Talend-style template) ──
   const exportJobAsJson = useCallback(async () => {
     const job = jobs.find((j) => j.id === activeJobId);
@@ -413,57 +585,10 @@ export function DesignerProvider({ children }) {
       }
     }
 
-    // ── Map UI type names to engine type names
-    const mapTypeToEngine = (uiType) => {
-      const TYPE_MAP = { String: 'str', Integer: 'int', Long: 'long', Float: 'float', Double: 'double', Boolean: 'bool', Date: 'datetime', 'byte[]': 'bytes', BigDecimal: 'decimal', Character: 'char', Short: 'short', Object: 'object' };
-      return TYPE_MAP[uiType] || (uiType || 'str').toLowerCase();
-    };
-
-    // ── Format schema columns to template style
-    const fmtCols = (cols) =>
-      (cols || []).map((c) => {
-        const col = { name: c.name, type: mapTypeToEngine(c.type || 'String'), nullable: c.nullable !== false, key: !!c.key };
-        if (c.length != null && c.length !== '') col.length = Number(c.length);
-        if (c.precision != null && c.precision !== '') col.precision = Number(c.precision);
-        if (c.date_pattern) col.date_pattern = c.date_pattern;
-        if (c.pattern) col.date_pattern = c.pattern;
-        return col;
-      });
-
-    // ── Build components
     const components = jNodes.map((node) => {
-      const cType = node.data.componentType;
       const stableId = idMap[node.id];
       const props = jProps[node.id] || {};
-
-      // Config = all properties except __schema
-      const config = {};
-      for (const [k, v] of Object.entries(props)) {
-        if (k === '__schema') continue;
-        config[k] = v;
-      }
-
-      // Input/output connection labels
-      const inputLabels = jEdges
-        .filter((e) => e.target === node.id && e.data?.category !== 'trigger')
-        .map((e) => e.label);
-      const outputLabels = jEdges
-        .filter((e) => e.source === node.id && e.data?.category !== 'trigger')
-        .map((e) => e.label);
-
-      return {
-        id: stableId,
-        type: cType.replace(/^t/, ''),
-        original_type: cType,
-        position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
-        config,
-        schema: {
-          input: fmtCols(nodeInputSchema[node.id]),
-          output: fmtCols(props.__schema),
-        },
-        inputs: inputLabels,
-        outputs: outputLabels,
-      };
+      return buildComponentExport(node, stableId, props, jNodes, jEdges, jProps, nodeInputSchema);
     });
 
     // ── Build flows (row / iterate edges)
@@ -894,42 +1019,10 @@ export function DesignerProvider({ children }) {
       }
     }
 
-    const mapTypeToEngine = (uiType) => {
-      const TYPE_MAP = { String: 'str', Integer: 'int', Long: 'long', Float: 'float', Double: 'double', Boolean: 'bool', Date: 'datetime', 'byte[]': 'bytes', BigDecimal: 'decimal', Character: 'char', Short: 'short', Object: 'object' };
-      return TYPE_MAP[uiType] || (uiType || 'str').toLowerCase();
-    };
-
-    const fmtCols = (cols) =>
-      (cols || []).map((c) => {
-        const col = { name: c.name, type: mapTypeToEngine(c.type || 'String'), nullable: c.nullable !== false, key: !!c.key };
-        if (c.length != null && c.length !== '') col.length = Number(c.length);
-        if (c.precision != null && c.precision !== '') col.precision = Number(c.precision);
-        if (c.date_pattern) col.date_pattern = c.date_pattern;
-        if (c.pattern) col.date_pattern = c.pattern;
-        return col;
-      });
-
     const components = jNodes.map((node) => {
-      const cType = node.data.componentType;
       const stableId = idMap[node.id];
       const props = jProps[node.id] || {};
-      const config = {};
-      for (const [k, v] of Object.entries(props)) {
-        if (k === '__schema') continue;
-        config[k] = v;
-      }
-      const inputLabels = jEdges.filter((e) => e.target === node.id && e.data?.category !== 'trigger').map((e) => e.label);
-      const outputLabels = jEdges.filter((e) => e.source === node.id && e.data?.category !== 'trigger').map((e) => e.label);
-      return {
-        id: stableId,
-        type: cType.replace(/^t/, ''),
-        original_type: cType,
-        position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
-        config,
-        schema: { input: fmtCols(nodeInputSchema[node.id]), output: fmtCols(props.__schema) },
-        inputs: inputLabels,
-        outputs: outputLabels,
-      };
+      return buildComponentExport(node, stableId, props, jNodes, jEdges, jProps, nodeInputSchema);
     });
 
     const flows = jEdges.filter((e) => e.data?.category !== 'trigger').map((e) => ({

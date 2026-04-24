@@ -265,7 +265,7 @@ export default function PropertiesPanel() {
       ) : (
         <div className="panel-body">
           {/* Schema row - Talend style, shown at top of basic tab */}
-          {activeTab === 'basic' && (
+          {activeTab === 'basic' && !isMapComponent && (
             <div className="prop-field schema-prop-row">
               <label className="prop-label">
                 <Database size={12} /> Schema
@@ -292,11 +292,12 @@ export default function PropertiesPanel() {
           {activeTab === 'basic' && isMapComponent && (
             <div className="prop-field map-editor-row">
               <button
-                className="map-editor-row__btn map-editor-row__btn--icon"
+                className="map-editor-row__btn"
                 onClick={() => setMapEditorOpen(true)}
                 title="Open Map Editor"
               >
                 <Shuffle size={16} />
+                Open Map Editor
               </button>
             </div>
           )}
@@ -346,6 +347,7 @@ export default function PropertiesPanel() {
           outputSchema={schemaColumns}
           mapConfig={propertyValues.__mapConfig}
           onMapConfigChange={handleMapConfigChange}
+          onOutputSchemaChange={handleSchemaChange}
           onClose={() => setMapEditorOpen(false)}
         />
       )}

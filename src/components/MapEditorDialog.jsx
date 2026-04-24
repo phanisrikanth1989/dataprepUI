@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   X, Plus, Trash2, ChevronDown, ChevronRight,
   Search, ArrowUp, ArrowDown, Copy, KeyRound,
@@ -497,6 +497,7 @@ export default function MapEditorDialog({
   outputSchema,
   mapConfig,
   onMapConfigChange,
+  onOutputSchemaChange,
   onClose,
 }) {
   const config = useMemo(
@@ -602,6 +603,14 @@ export default function MapEditorDialog({
   const [selectedOutput, setSelectedOutput] = useState(() => outputs[0]?.name || null);
   const [selectedOutputIdx, setSelectedOutputIdx] = useState(0);
   const [inputExprBuilderTarget, setInputExprBuilderTarget] = useState(null);
+
+  // Keep component __schema in sync with the active/first map output so JSON export includes map-defined output schema.
+  useEffect(() => {
+    if (!onOutputSchemaChange) return;
+    const active = outputs[selectedOutputIdx];
+    const schema = active?.schema || outputs[0]?.schema || [];
+    onOutputSchemaChange(schema);
+  }, [outputs, selectedOutputIdx, onOutputSchemaChange]);
 
   const selectOutput = useCallback((name) => {
     setSelectedOutput(name);
