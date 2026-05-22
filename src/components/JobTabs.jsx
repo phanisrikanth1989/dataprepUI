@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { X, Copy, Edit3, Trash2 } from 'lucide-react';
+import { X, Copy, Edit3, Trash2, FileCode, Code2 } from 'lucide-react';
 import { useDesigner } from '../context/DesignerContext';
 import ContextMenu from './ContextMenu';
 
@@ -12,6 +12,10 @@ export default function JobTabs() {
     renameJob,
     duplicateJob,
     dirtyJobIds,
+    openRoutineTabs,
+    activeRoutineFilename,
+    setActiveRoutineFilename,
+    closeRoutineTab,
   } = useDesigner();
 
   const [contextMenu, setContextMenu] = useState(null);
@@ -66,8 +70,8 @@ export default function JobTabs() {
         {jobs.map((job) => (
           <div
             key={job.id}
-            className={`job-tab ${activeJobId === job.id ? 'job-tab--active' : ''}`}
-            onClick={() => setActiveJobId(job.id)}
+            className={`job-tab ${activeJobId === job.id && !activeRoutineFilename ? 'job-tab--active' : ''}`}
+            onClick={() => { setActiveJobId(job.id); setActiveRoutineFilename(null); }}
             onContextMenu={(e) => handleContextMenu(e, job.id)}
             title={`${job.metadata.name} (right-click for options)`}
           >
@@ -99,6 +103,28 @@ export default function JobTabs() {
                 closeJob(job.id);
               }}
               title="Delete job"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+
+        {/* Routine tabs */}
+        {openRoutineTabs.map((tab) => (
+          <div
+            key={tab.filename}
+            className={`job-tab job-tab--routine ${activeRoutineFilename === tab.filename ? 'job-tab--active' : ''}`}
+            onClick={() => setActiveRoutineFilename(tab.filename)}
+            title={tab.filename}
+          >
+            <FileCode size={12} style={{ flexShrink: 0, opacity: 0.7, color: tab.language === 'python' ? '#3b82f6' : '#f5a623' }} />
+            <span className="job-tab__name">
+              {tab.dirty ? `*${tab.name}` : tab.name}
+            </span>
+            <button
+              className="job-tab__close"
+              onClick={(e) => { e.stopPropagation(); closeRoutineTab(tab.filename); }}
+              title="Close"
             >
               <X size={12} />
             </button>

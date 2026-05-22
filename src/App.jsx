@@ -6,8 +6,10 @@ import PropertiesPanel from './components/PropertiesPanel';
 import JobDesignerPanel from './components/JobDesignerPanel';
 import MetadataPanel from './components/MetadataPanel';
 import GitHubPanel from './components/GitHubPanel';
+import JavaRoutinesPanel from './components/JavaRoutinesPanel';
+import PythonRoutinesPanel from './components/PythonRoutinesPanel';
 import { useDesigner } from './context/DesignerContext';
-import { Sun, Moon, Layers, LayoutList, Database, Github } from 'lucide-react';
+import { Sun, Moon, Layers, LayoutList, Database, Github, Coffee, Code2 } from 'lucide-react';
 import './App.css';
 
 class ErrorBoundary extends Component {
@@ -117,12 +119,28 @@ function AppLayout() {
             >
               <Github size={16} />
             </button>
+            <button
+              className={`sidebar-tab ${leftTab === 'java-routines' ? 'sidebar-tab--active' : ''}`}
+              onClick={() => setLeftTab('java-routines')}
+              title="Java Routines"
+            >
+              <Coffee size={16} />
+            </button>
+            <button
+              className={`sidebar-tab ${leftTab === 'python-routines' ? 'sidebar-tab--active' : ''}`}
+              onClick={() => setLeftTab('python-routines')}
+              title="Python Routines"
+            >
+              <Code2 size={16} />
+            </button>
           </div>
           <div className="sidebar-content">
             {leftTab === 'palette' && <ComponentPalette />}
             {leftTab === 'designer' && <JobDesignerPanel />}
             {leftTab === 'metadata' && <MetadataPanel />}
             {leftTab === 'repository' && <GitHubPanel />}
+            {leftTab === 'java-routines' && <JavaRoutinesPanel />}
+            {leftTab === 'python-routines' && <PythonRoutinesPanel />}
           </div>
         </aside>
 

@@ -124,6 +124,35 @@ export function DesignerProvider({ children }) {
   // Left sidebar active tab
   const [leftTab, setLeftTab] = useState('designer');
 
+  // ── Routine tabs (Talend-style double-click to open) ──
+  const [openRoutineTabs, setOpenRoutineTabs] = useState([]); // [{filename, name, content, dirty}]
+  const [activeRoutineFilename, setActiveRoutineFilename] = useState(null);
+
+  const openRoutineTab = useCallback((routine) => {
+    setOpenRoutineTabs((prev) => {
+      if (prev.find((t) => t.filename === routine.filename)) return prev;
+      return [...prev, { filename: routine.filename, name: routine.name || routine.filename, content: routine.content || '', dirty: false }];
+    });
+    setActiveRoutineFilename(routine.filename);
+  }, []);
+
+  const closeRoutineTab = useCallback((filename) => {
+    setOpenRoutineTabs((prev) => prev.filter((t) => t.filename !== filename));
+    setActiveRoutineFilename((prev) => (prev === filename ? null : prev));
+  }, []);
+
+  const updateRoutineTabContent = useCallback((filename, content) => {
+    setOpenRoutineTabs((prev) =>
+      prev.map((t) => (t.filename === filename ? { ...t, content, dirty: true } : t))
+    );
+  }, []);
+
+  const markRoutineTabClean = useCallback((filename) => {
+    setOpenRoutineTabs((prev) =>
+      prev.map((t) => (t.filename === filename ? { ...t, dirty: false } : t))
+    );
+  }, []);
+
   // Clipboard for cross-job copy
   const [clipboard, setClipboard] = useState(null);
 
@@ -1723,6 +1752,14 @@ export function DesignerProvider({ children }) {
     redo,
     canUndo,
     canRedo,
+    // Routine tabs
+    openRoutineTabs,
+    activeRoutineFilename,
+    setActiveRoutineFilename,
+    openRoutineTab,
+    closeRoutineTab,
+    updateRoutineTabContent,
+    markRoutineTabClean,
   };
 
   return (

@@ -11,6 +11,7 @@ import TalendComponentNode from './TalendComponentNode';
 import JobTabs from './JobTabs';
 import ContextVariablesPanel from './ContextVariablesPanel';
 import ContextMenu from './ContextMenu';
+import RoutineEditorView from './RoutineEditorView';
 import { formatDuration } from '../services/engineService';
 import {
   Save,
@@ -247,6 +248,7 @@ export default function DesignerCanvas() {
     updateSubjobName,
     onNodeDragStart,
     moveSubjobNodes,
+    activeRoutineFilename,
   } = useDesigner();
 
   const [bottomTab, setBottomTab] = useState('run');
@@ -625,6 +627,9 @@ export default function DesignerCanvas() {
         </div>
       )}
       <JobTabs />
+      {activeRoutineFilename ? (
+        <RoutineEditorView />
+      ) : (
       <div className="designer-canvas" ref={reactFlowWrapper} style={{ flex: 1 }}>
         <ReactFlow
           nodes={nodes}
@@ -763,6 +768,7 @@ export default function DesignerCanvas() {
           )}
         </ReactFlow>
       </div>
+      )}
 
       {/* Node right-click context menu */}
       {nodeContextMenu && (
